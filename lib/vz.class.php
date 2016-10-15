@@ -3,7 +3,7 @@
 /**
  * openVZ class.
  * @copyright Phurix 2009-2016.
- * 
+ *
  * Example:
  * $vz = new vz();
  * print_r($vz->connect('server.domain.com', 'username', 'p4ssw0rd', 22));
@@ -17,9 +17,8 @@
  * print_r($vz->start('123'));
  * print_r($vz->restart('123'));
  * print_r($vz->destroy('123'));
- * 
+ *
  * */
-
 class vz
 {
     /**
@@ -52,6 +51,15 @@ class vz
             $this->response = $response;
         }
         return true;
+    }
+
+    /**
+     * @return string
+     */
+    function getResponse() {
+        if ($this->response) {
+            return $this->response;
+        }
     }
 
     /**
