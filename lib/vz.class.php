@@ -83,7 +83,7 @@ class vz
      * @param $user
      * @param $pass
      * @param int $port
-     * @return bool|resource
+     * @return bool
      */
     function connect($server, $user, $pass, $port = 22) {
         if (!$this->ssh) {
@@ -93,12 +93,18 @@ class vz
         for ($i = 0; $i < $this->retry; $i++) {
             $connect = $this->ssh->connect($server, $port);
             if ($connect) {
-                $this->connected = $connect;
-                $this->ssh->auth($user, $pass);
-                break;
+                $homePath = $_SERVER['DOCUMENT_ROOT'] . DIRECTORY_SEPARATOR . '..';
+                $keyFile = $homePath . DIRECTORY_SEPARATOR . '.ssh' . DIRECTORY_SEPARATOR . 'id_rsa';
+                $this->ssh->setKeyFiles($keyFile);
+                $auth = $this->ssh->auth($user, $pass);
+                if ($auth) {
+                    $this->connected = $connect;
+                    return true;
+                }
             }
         }
-        return $this->connected;
+        $this->setResponse($this->ssh->getResponse());
+        return false;
     }
 
     /**
@@ -133,8 +139,7 @@ class vz
             return $user;
         } else {
             $response = 'unable to login as ' . $user;
-            $this->setResponse($response);
-            return false;
+            throw new Exception($response);
         }
     }
 
@@ -144,8 +149,7 @@ class vz
     function bwmonreset() {
         if (!$this->connected) {
             $response = 'no ssh connection';
-            $this->setResponse($response);
-            return false;
+            throw new Exception($response);
         }
         $exec = '/sbin/iptables -Z';
         $result = $this->shellExecute($exec);
@@ -155,8 +159,7 @@ class vz
             return $result;
         }
         $response = 'unable to reset bandwidth counters';
-        $this->setResponse($response);
-        return false;
+        throw new Exception($response);
     }
 
     /**
@@ -166,13 +169,11 @@ class vz
     function bwmon($ip) {
         if (!$this->connected) {
             $response = 'no ssh connection';
-            $this->setResponse($response);
-            return false;
+            throw new Exception($response);
         }
         if (!$this->_valid_ip($ip)) {
             $response = 'invalid ip address';
-            $this->setResponse($response);
-            return false;
+            throw new Exception($response);
         }
         $cmd = "/sbin/iptables -L FORWARD -v -x -n | grep $ip";
         $result = $this->shellExecute($cmd);
@@ -182,8 +183,7 @@ class vz
             return $result;
         }
         $response = 'unable to generate bandwidth stats';
-        $this->setResponse($response);
-        return false;
+        throw new Exception($response);
     }
 
     /**
@@ -193,13 +193,11 @@ class vz
     function bwmonaddip($ip) {
         if (!$this->connected) {
             $response = 'no ssh connection';
-            $this->setResponse($response);
-            return false;
+            throw new Exception($response);
         }
         if (!$this->_valid_ip($ip)) {
             $response = 'invalid ip address';
-            $this->setResponse($response);
-            return false;
+            throw new Exception($response);
         }
         $cmds = array();
         $cmds[] = "/sbin/iptables -A FORWARD -o eth0 -s $ip";
@@ -213,8 +211,7 @@ class vz
             return $result;
         }
         $response = 'unable to add bandwidth monitor';
-        $this->setResponse($response);
-        return false;
+        throw new Exception($response);
     }
 
     /**
@@ -224,13 +221,11 @@ class vz
     function bwmondelip($ip) {
         if (!$this->connected) {
             $response = 'no ssh connection';
-            $this->setResponse($response);
-            return false;
+            throw new Exception($response);
         }
         if (!$this->_valid_ip($ip)) {
             $response = 'invalid ip address';
-            $this->setResponse($response);
-            return false;
+            throw new Exception($response);
         }
         $cmds = array();
         $cmds[] = "/sbin/iptables -D FORWARD -o eth0 -s $ip";
@@ -244,8 +239,7 @@ class vz
             return $result;
         }
         $response = 'unable to remove bandwidth monitor';
-        $this->setResponse($response);
-        return false;
+        throw new Exception($response);
     }
 
     /**
@@ -255,7 +249,7 @@ class vz
     function veid2ip($veid) {
         if (!$this->connected) {
             $response = 'no ssh connection';
-            $this->setResponse($response);
+            throw new Exception($response);
             return false;
         }
         $cmd = "vzlist -o ctid,ip | grep $veid";
@@ -271,8 +265,7 @@ class vz
             }
         }
         $response = 'unable to gather ip address data';
-        $this->setResponse($response);
-        return false;
+        throw new Exception($response);
     }
 
     /**
@@ -281,8 +274,7 @@ class vz
     function listos() {
         if (!$this->connected) {
             $response = 'no ssh connection';
-            $this->setResponse($response);
-            return false;
+            throw new Exception($response);
         }
         $exec = "ls -al /vz/template/cache/ | awk '{print $9}'";
         $listos = $this->shellExecute($exec);
@@ -298,8 +290,7 @@ class vz
             return $result;
         }
         $response = 'no operating systems found on hardware node';
-        $this->setResponse($response);
-        return false;
+        throw new Exception($response);
     }
 
     /**
@@ -313,12 +304,8 @@ class vz
      * @return array|bool
      */
     function listvz() {
-        if (!$this->connected) {
-            $response = 'no ssh connection';
-            $this->setResponse($response);
-            return false;
-        }
-        $listvz = $this->shellExecute('listvz -a');
+        $this->_isConnected();
+        $listvz = $this->shellExecute('vzlist -a');
         $match = array();
         $pattern = '/([0-9]+)\s+([0-9\-]+)\s+([a-z]+)\s+([0-9\.]+)\s+([\S]+)/';
         if (preg_match_all($pattern, $listvz, $match)) {
@@ -338,14 +325,11 @@ class vz
                 return $result;
             } else {
                 $response = 'unable to determine virtual servers';
-                $this->setResponse($response);
-                return false;
+                throw new Exception($response);
             }
-        } else {
-            $response = 'no virtual servers found';
-            $this->setResponse($response);
-            return false;
         }
+        $response = 'unable to list virtual servers';
+        throw new Exception($response);
     }
 
     /**
@@ -353,27 +337,16 @@ class vz
      * @return bool
      */
     function veidexists($veid) {
-        if (!$this->connected) {
-            $response = 'no ssh connection';
+        $this->_isConnected();
+        $this->_isVeid($veid);
+        $listvz = $this->listvz();
+        if (!empty($listvz) && array_key_exists($veid, $listvz)) {
+            $response = 'veid exists';
             $this->setResponse($response);
-            return false;
+            return true;
         }
-        if (preg_match('/([0-9]+)/', $veid)) {
-            $listvz = $this->listvz();
-            if ((($listvz) && !empty($listvz)) && array_key_exists($veid, $listvz)) {
-                $response = 'veid exists';
-                $this->setResponse($response);
-                return true;
-            } else {
-                $response = 'veid does not exist';
-                $this->setResponse($response);
-                return false;
-            }
-        } else {
-            $response = 'invalid veid';
-            $this->setResponse($response);
-            return false;
-        }
+        $response = 'veid not found on this server';
+        throw new Exception($response);
     }
 
     /**
@@ -385,8 +358,7 @@ class vz
     function set($veid, $data, $save = false) {
         if (!$this->connected) {
             $response = 'no ssh connection';
-            $this->setResponse($response);
-            return false;
+            throw new Exception($response);
         }
         if (preg_match('/([0-9]+)/', $veid)) {
             if (is_array($data)) {
@@ -412,13 +384,11 @@ class vz
                 return $result;
             } else {
                 $response = 'virtual server data not provided or invalid';
-                $this->setResponse($response);
-                return false;
+                throw new Exception($response);
             }
         } else {
             $response = 'invalid veid';
-            $this->setResponse($response);
-            return false;
+            throw new Exception($response);
         }
     }
 
@@ -438,8 +408,7 @@ class vz
     function stop($veid, $save = true) {
         if (!$this->connected) {
             $response = 'no ssh connection';
-            $this->setResponse($response);
-            return false;
+            throw new Exception($response);
         }
         if (preg_match('/([0-9]+)/', $veid)) {
             $timeout = $this->ssh->timeout();
@@ -456,13 +425,11 @@ class vz
                 return true;
             } else {
                 $response = 'Unable to stop virtual server';
-                $this->setResponse($response);
-                return false;
+                throw new Exception($response);
             }
         } else {
             $response = 'invalid veid';
-            $this->setResponse($response);
-            return false;
+            throw new Exception($response);
         }
     }
 
@@ -482,8 +449,7 @@ class vz
     function start($veid, $save = true) {
         if (!$this->connected) {
             $response = 'no ssh connection';
-            $this->setResponse($response);
-            return false;
+            throw new Exception($response);
         }
         if (preg_match('/([0-9]+)/', $veid)) {
             $timeout = $this->ssh->timeout();
@@ -499,15 +465,34 @@ class vz
                 $this->setResponse($response);
                 return true;
             } else {
-                $response = 'Unable to start virtual server';
-                $this->setResponse($response);
-                return false;
+                $response = 'unable to start virtual server';
+                throw new Exception($response);
             }
         } else {
             $response = 'invalid veid';
-            $this->setResponse($response);
-            return false;
+            throw new Exception($response);
         }
+    }
+
+    private function _isConnected() {
+        if (!$this->connected) {
+            $response = 'no ssh connection';
+            throw new Exception($response);
+        }
+    }
+
+    private function _isVeid($veid) {
+        $veid = (int)filter_var($veid, FILTER_VALIDATE_INT);
+        if ($veid > 0) {
+            return $veid;
+        }
+        $response = 'invalid veid';
+        throw new Exception($response);
+    }
+
+    private function _veidExists($veid) {
+        $veidexists = $this->veidexists($veid);
+        return $veidexists;
     }
 
     /**
@@ -515,31 +500,21 @@ class vz
      * @return bool
      */
     function restart($veid) {
-        if (!$this->connected) {
-            $response = 'no ssh connection';
+        $this->_isConnected();
+        $this->_isVeid($veid);
+        $this->_veidExists($veid);
+        $timeout = $this->ssh->timeout();
+        $this->ssh->settimeout(120);
+        $exe = 'vzctl restart ' . $veid;
+        $result = $this->shellExecute($exe);
+        $this->ssh->settimeout($timeout);
+        if (preg_match('/container start in progress/i', $result)) {
+            $response = 'virtual server has been restarted';
             $this->setResponse($response);
-            return false;
+            return true;
         }
-        if (preg_match('/([0-9]+)/', $veid)) {
-            $timeout = $this->ssh->timeout();
-            $this->ssh->settimeout(120);
-            $exe = 'vzctl restart ' . $veid;
-            $result = $this->shellExecute($exe);
-            $this->ssh->settimeout($timeout);
-            if (preg_match('/container start in progress/i', $result)) {
-                $response = 'virtual server has been restarted';
-                $this->setResponse($response);
-                return true;
-            } else {
-                $response = 'Unable to restart virtual server';
-                $this->setResponse($response);
-                return false;
-            }
-        } else {
-            $response = 'invalid veid';
-            $this->setResponse($response);
-            return false;
-        }
+        $response = 'unexpected response: ' . $result;
+        throw new Exception($response);
     }
 
     /**
@@ -553,8 +528,7 @@ class vz
     function create($veid, $os, $ip, $pass = null, $settings = null) {
         if (!$this->connected) {
             $response = 'no ssh connection';
-            $this->setResponse($response);
-            return false;
+            throw new Exception($response);
         }
         if (preg_match('/([0-9]+)/', $veid)) {
             $veidexists = $this->veidexists($veid);
@@ -593,26 +567,22 @@ class vz
                             return $result;
                         } else {
                             $response = 'failed to create virtual server';
-                            $this->setResponse($response);
-                            return false;
+                            throw new Exception($response);
                         }
                     } else {
                         $response = 'invalid ip address';
-                        $this->setResponse($response);
-                        return false;
+                        throw new Exception($response);
                     }
                 } else {
                     $response = 'operating system template not found or available';
-                    $this->setResponse($response);
-                    return false;
+                    throw new Exception($response);
                 }
             } else {
                 return $veidexists;
             }
         } else {
             $response = 'invalid veid';
-            $this->setResponse($response);
-            return false;
+            throw new Exception($response);
         }
     }
 
@@ -623,8 +593,7 @@ class vz
     function destroy($veid) {
         if (!$this->connected) {
             $response = 'no ssh connection';
-            $this->setResponse($response);
-            return false;
+            throw new Exception($response);
         }
         if (preg_match('/([0-9]+)/', $veid)) {
             $veidexists = $this->veidexists($veid);
@@ -637,16 +606,14 @@ class vz
                     return true;
                 } else {
                     $response = 'failed to destroy virtual server';
-                    $this->setResponse($response);
-                    return false;
+                    throw new Exception($response);
                 }
             } else {
                 return $veidexists;
             }
         } else {
             $response = 'invalid veid';
-            $this->setResponse($response);
-            return false;
+            throw new Exception($response);
         }
     }
 
