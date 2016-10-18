@@ -10,7 +10,7 @@
  * print_r($vz->su());
  * print_r($vz->listvz());
  * print_r($vz->listos());
- * print_r($vz->veidexists('123'));
+ * print_r($vz->exists('123'));
  * print_r($vz->create('123', 'centos-4-i386-minimal', '192.168.50.51', 'n3wr00tp4ssw0rd'));
  * print_r($vz->set('123', array('diskspace'=>'430209:433209', 'cpulimit'=>'20%')));
  * print_r($vz->stop('123'));
@@ -336,7 +336,7 @@ class vz
      * @param $veid
      * @return bool
      */
-    function veidexists($veid) {
+    function exists($veid) {
         $this->_isConnected();
         $this->_isVeid($veid);
         $listvz = $this->listvz();
@@ -490,9 +490,9 @@ class vz
         throw new Exception($response);
     }
 
-    private function _veidExists($veid) {
-        $veidexists = $this->veidexists($veid);
-        return $veidexists;
+    private function _exists($veid) {
+        $exists = $this->exists($veid);
+        return $exists;
     }
 
     /**
@@ -502,7 +502,7 @@ class vz
     function restart($veid) {
         $this->_isConnected();
         $this->_isVeid($veid);
-        $this->_veidExists($veid);
+        $this->_exists($veid);
         $timeout = $this->ssh->timeout();
         $this->ssh->settimeout(120);
         $exe = 'vzctl restart ' . $veid;
@@ -531,8 +531,8 @@ class vz
             throw new Exception($response);
         }
         if (preg_match('/([0-9]+)/', $veid)) {
-            $veidexists = $this->veidexists($veid);
-            if (!$veidexists) {
+            $exists = $this->exists($veid);
+            if (!$exists) {
                 $listos = $this->listos();
                 if (($listos) && in_array($listos, $os)) {
                     if ($this->_valid_ip($ip)) {
@@ -578,7 +578,7 @@ class vz
                     throw new Exception($response);
                 }
             } else {
-                return $veidexists;
+                return $exists;
             }
         } else {
             $response = 'invalid veid';
@@ -596,8 +596,8 @@ class vz
             throw new Exception($response);
         }
         if (preg_match('/([0-9]+)/', $veid)) {
-            $veidexists = $this->veidexists($veid);
-            if ($veidexists) {
+            $exists = $this->exists($veid);
+            if ($exists) {
                 $this->stop($veid);
                 $result = $this->shellExecute('vzctl destroy ' . $veid);
                 if (preg_match('/container private area was destroyed/i', $result)) {
@@ -609,7 +609,7 @@ class vz
                     throw new Exception($response);
                 }
             } else {
-                return $veidexists;
+                return $exists;
             }
         } else {
             $response = 'invalid veid';
