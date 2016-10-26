@@ -170,20 +170,23 @@ class SSH
         if (!$connect) {
             $connect = $this->session();
         }
+        $auth = false;
         if ($this->pub_key_file && $this->private_key_file) {
             if (!file_exists($this->pub_key_file) || !file_exists($this->private_key_file)) {
                 throw new Exception('unable to find the key files');
             }
             $auth = ssh2_auth_pubkey_file($connect, $user, $this->pub_key_file, $this->private_key_file, $pass);
-        } else {
+        } elseif ($pass) {
             $auth = ssh2_auth_password($connect, $user, $pass);
+        } else {
+            throw new Exception('invalid credentials');
         }
-        if ($auth) {
-            $this->setConnected(true);
-            $this->setResponse('connected and logged in');
-            return $auth;
+        if (!$auth) {
+            throw new Exception('unable to authenticate');
         }
-        throw new Exception('unable to authenticate');
+        $this->setConnected(true);
+        $this->setResponse('connected and logged in');
+        return $auth;
     }
 
     /**
