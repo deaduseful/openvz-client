@@ -40,7 +40,7 @@ class SSH
     /**
      * @var int
      */
-    private $timeout = 10;
+    private $timeout = 30;
     /**
      * @var array
      */
@@ -197,7 +197,7 @@ class SSH
         if (!$this->isConnected()) {
             throw new Exception('no ssh connection');
         }
-        $this->settimeout(1);
+        $this->setTimeout(1);
         $this->shellExecute('exit;');
         $this->session = null;
         $this->stream = null;
@@ -327,7 +327,7 @@ class SSH
     /**
      * @param int $sec
      */
-    function setTimeout($sec = 10) {
+    function setTimeout($sec = 30) {
         $this->timeout = $sec;
     }
 
