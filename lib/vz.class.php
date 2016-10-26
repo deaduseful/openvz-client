@@ -60,6 +60,7 @@ class vz
         if ($this->response) {
             return $this->response;
         }
+        return false;
     }
 
     /**
@@ -98,7 +99,7 @@ class vz
                 $this->ssh->setKeyFiles($keyFile);
                 $auth = $this->ssh->auth($user, $pass);
                 if ($auth) {
-                    $this->connected = $connect;
+                    $this->connected = $server;
                     return true;
                 }
             }
@@ -120,6 +121,7 @@ class vz
     /**
      * @param string $user
      * @return bool|string
+     * @throws Exception
      */
     function su($user = 'root') {
         if (!$this->connected) {
@@ -127,9 +129,9 @@ class vz
             $this->setResponse($response);
             return false;
         }
-        $this->ssh->settimeout(1);
+        $this->_setTimeout(1);
         $this->shellExecute('sudo su ' . $user);
-        $this->ssh->settimeout();
+        $this->_setTimeout();
         $whoami = trim($this->shellExecute('whoami'));
         if ($whoami && $whoami == $user) {
             $cmd = 'export PATH=$PATH:/usr/sbin:/sbin';
@@ -145,6 +147,7 @@ class vz
 
     /**
      * @return bool|mixed
+     * @throws Exception
      */
     function bwmonreset() {
         if (!$this->connected) {
@@ -165,13 +168,14 @@ class vz
     /**
      * @param $ip
      * @return bool|mixed
+     * @throws Exception
      */
     function bwmon($ip) {
         if (!$this->connected) {
             $response = 'no ssh connection';
             throw new Exception($response);
         }
-        if (!$this->_valid_ip($ip)) {
+        if (!$this->_isValidIp($ip)) {
             $response = 'invalid ip address';
             throw new Exception($response);
         }
@@ -189,13 +193,14 @@ class vz
     /**
      * @param $ip
      * @return array|bool
+     * @throws Exception
      */
     function bwmonaddip($ip) {
         if (!$this->connected) {
             $response = 'no ssh connection';
             throw new Exception($response);
         }
-        if (!$this->_valid_ip($ip)) {
+        if (!$this->_isValidIp($ip)) {
             $response = 'invalid ip address';
             throw new Exception($response);
         }
@@ -217,13 +222,14 @@ class vz
     /**
      * @param $ip
      * @return array|bool
+     * @throws Exception
      */
     function bwmondelip($ip) {
         if (!$this->connected) {
             $response = 'no ssh connection';
             throw new Exception($response);
         }
-        if (!$this->_valid_ip($ip)) {
+        if (!$this->_isValidIp($ip)) {
             $response = 'invalid ip address';
             throw new Exception($response);
         }
@@ -245,12 +251,12 @@ class vz
     /**
      * @param $veid
      * @return bool|string
+     * @throws Exception
      */
     function veid2ip($veid) {
         if (!$this->connected) {
             $response = 'no ssh connection';
             throw new Exception($response);
-            return false;
         }
         $cmd = "vzlist -o ctid,ip | grep $veid";
         $results = $this->shellExecute($cmd);
@@ -270,20 +276,20 @@ class vz
 
     /**
      * @return bool
+     * @throws Exception
      */
     function listos() {
-        if (!$this->connected) {
-            $response = 'no ssh connection';
-            throw new Exception($response);
-        }
-        $exec = "ls -al /vz/template/cache/ | awk '{print $9}'";
+        $this->_isConnected();
+        $dir_template_cache = '/vz/template/cache/';
+        $exec = "ls -al $dir_template_cache | awk '{print $9}'";
         $listos = $this->shellExecute($exec);
-        $osmatch = array();
-        if (preg_match_all('/([a-z][\S]+\.gz)\s/i', $listos, $osmatch)) {
-            $count = count($osmatch[1]);
+        $match = array();
+        if (preg_match_all('/([a-z][\S]+\.gz)\s/i', $listos, $match)) {
+            $count = count($match[1]);
             $result = array();
             for ($i = 1; $i < $count; $i++) {
-                $result['t' . $i] = $osmatch[1][$i];
+                $os = $match[1][$i];
+                $result['t' . $i] = $os;
             }
             $response = 'virtual operating system templates listed';
             $this->setResponse($response);
@@ -291,6 +297,41 @@ class vz
         }
         $response = 'no operating systems found on hardware node';
         throw new Exception($response);
+    }
+
+    function osTemplateCheck($os) {
+        $osFilename = $os . '.tar.gz';
+        $osPath = '/vz/template/cache';
+        $osFile = $osPath . DIRECTORY_SEPARATOR . $osFilename;
+        $osUrl = 'http://download.openvz.org/template/precreated';
+        $osUrlFile = "$osUrl/$osFilename";
+        if ($this->_fileExists($osFile)) {
+            return true;
+        }
+        $this->_fileCopy($osUrlFile, $osFile);
+        if ($this->_fileExists($osFile)) {
+            return true;
+        }
+        $response = "unable to find '$os'";
+        throw new Exception($response);
+    }
+
+    private function _fileExists($file) {
+        $cmd = "[[ -e $file ]] && echo true";
+        $result = $this->shellExecute($cmd);
+        if ($result == 'true') {
+            return true;
+        }
+        return false;
+    }
+
+    private function _fileCopy($source, $dest, $timeout = 9000) {
+        $_timeout = $this->_getTimeout();
+        $this->_setTimeout($timeout);
+        $cmd = "wget $source -O $dest -t 5 -T $timeout";
+        $result = $this->shellExecute($cmd);
+        $this->_setTimeout($_timeout);
+        return $result;
     }
 
     /**
@@ -302,6 +343,7 @@ class vz
 
     /**
      * @return array|bool
+     * @throws Exception
      */
     function listvz() {
         $this->_isConnected();
@@ -335,6 +377,7 @@ class vz
     /**
      * @param $veid
      * @return bool
+     * @throws Exception
      */
     function exists($veid) {
         $this->_isConnected();
@@ -345,7 +388,8 @@ class vz
             $this->setResponse($response);
             return true;
         }
-        $response = 'veid not found on this server';
+        $server = $this->_isConnected();
+        $response = "veid '$veid' not found on server '$server'";
         throw new Exception($response);
     }
 
@@ -354,42 +398,36 @@ class vz
      * @param $data
      * @param bool $save
      * @return bool
+     * @throws Exception
      */
     function set($veid, $data, $save = false) {
-        if (!$this->connected) {
-            $response = 'no ssh connection';
+        $this->_isConnected();
+        $this->_isVeid($veid);
+        if (!is_array($data)) {
+            $response = 'virtual server data not provided or invalid';
             throw new Exception($response);
         }
-        if (preg_match('/([0-9]+)/', $veid)) {
-            if (is_array($data)) {
-                $result = array();
-                foreach ($data as $dkey => $dval) {
-                    if (!is_array($dkey) && !is_array($dval)) {
-                        $cmd = "vzctl set $veid --$dkey $dval";
-                        if ($save) {
-                            $cmd .= ' --save';
-                        }
-                        $exe = $this->shellExecute($cmd);
-                        if (preg_match('/saved parameters/i', $exe)) {
-                            $result[$dkey] = 1;
-                        } else {
-                            $result[$dkey] = 0;
-                        }
-                    } else {
-                        $result[$dkey] = 0;
-                    }
+        $result = array();
+        foreach ($data as $dkey => $dval) {
+            if (!is_array($dkey) && !is_array($dval)) {
+                $cmd = "vzctl set $veid --$dkey $dval";
+                if ($save) {
+                    $cmd .= ' --save';
                 }
-                $response = 'settings applied to virtual server';
-                $this->setResponse($response);
-                return $result;
+                $exe = $this->shellExecute($cmd);
+                if (preg_match('/saved parameters/i', $exe)) {
+                    $result[$dkey] = 1;
+                } else {
+                    $result[$dkey] = 0;
+                }
             } else {
-                $response = 'virtual server data not provided or invalid';
-                throw new Exception($response);
+                $result[$dkey] = 0;
             }
-        } else {
-            $response = 'invalid veid';
-            throw new Exception($response);
         }
+        $response = 'settings applied to virtual server';
+        $this->setResponse($response);
+        return $result;
+
     }
 
     /**
@@ -404,33 +442,31 @@ class vz
      * @param $veid
      * @param bool $save
      * @return bool
+     * @throws Exception
      */
     function stop($veid, $save = true) {
-        if (!$this->connected) {
-            $response = 'no ssh connection';
+        $this->_isConnected();
+        $this->_isVeid($veid);
+        $timeout = $this->_getTimeout();
+        $this->_setTimeout(120);
+        $exe = 'vzctl stop ' . $veid;
+        if ($save) {
+            $exe .= "; vzctl set $veid --onboot no --save";
+        }
+        $result = $this->shellExecute($exe);
+        $this->_setTimeout($timeout);
+        if (preg_match('/container is not running/i', $result)) {
+            $response = 'virtual server already stopped';
+            $this->setResponse($response);
+            return true;
+        }
+        if (!preg_match('/container was stopped/i', $result)) {
+            $response = 'unable to stop virtual server';
             throw new Exception($response);
         }
-        if (preg_match('/([0-9]+)/', $veid)) {
-            $timeout = $this->ssh->timeout();
-            $this->ssh->settimeout(120);
-            $exe = 'vzctl stop ' . $veid;
-            if ($save) {
-                $exe .= "; vzctl set $veid --onboot no --save";
-            }
-            $result = $this->shellExecute($exe);
-            $this->ssh->settimeout($timeout);
-            if (preg_match('/container was stopped/i', $result)) {
-                $response = 'virtual server has been stopped';
-                $this->setResponse($response);
-                return true;
-            } else {
-                $response = 'Unable to stop virtual server';
-                throw new Exception($response);
-            }
-        } else {
-            $response = 'invalid veid';
-            throw new Exception($response);
-        }
+        $response = 'virtual server has been stopped';
+        $this->setResponse($response);
+        return true;
     }
 
     /**
@@ -445,69 +481,43 @@ class vz
      * @param $veid
      * @param bool $save
      * @return bool
+     * @throws Exception
      */
     function start($veid, $save = true) {
-        if (!$this->connected) {
-            $response = 'no ssh connection';
-            throw new Exception($response);
+        $this->_isConnected();
+        $this->_isVeid($veid);
+        $timeout = $this->_getTimeout();
+        $this->_setTimeout(60);
+        $exe = 'vzctl start ' . $veid;
+        if ($save) {
+            $exe .= "; vzctl set $veid --onboot yes --save";
         }
-        if (preg_match('/([0-9]+)/', $veid)) {
-            $timeout = $this->ssh->timeout();
-            $this->ssh->settimeout(60);
-            $exe = 'vzctl start ' . $veid;
-            if ($save) {
-                $exe .= "; vzctl set $veid --onboot yes --save";
-            }
-            $result = $this->shellExecute($exe);
-            $this->ssh->settimeout($timeout);
-            if (preg_match('/container start in progress/i', $result)) {
-                $response = 'virtual server has been started';
-                $this->setResponse($response);
-                return true;
-            } else {
-                $response = 'unable to start virtual server';
-                throw new Exception($response);
-            }
+        $result = $this->shellExecute($exe);
+        $this->_setTimeout($timeout);
+        if (preg_match('/container start in progress/i', $result)) {
+            $response = 'virtual server has been started';
+            $this->setResponse($response);
+            return true;
         } else {
-            $response = 'invalid veid';
+            $response = 'unable to start virtual server';
             throw new Exception($response);
         }
-    }
-
-    private function _isConnected() {
-        if (!$this->connected) {
-            $response = 'no ssh connection';
-            throw new Exception($response);
-        }
-    }
-
-    private function _isVeid($veid) {
-        $veid = (int)filter_var($veid, FILTER_VALIDATE_INT);
-        if ($veid > 0) {
-            return $veid;
-        }
-        $response = 'invalid veid';
-        throw new Exception($response);
-    }
-
-    private function _exists($veid) {
-        $exists = $this->exists($veid);
-        return $exists;
     }
 
     /**
      * @param $veid
      * @return bool
+     * @throws Exception
      */
     function restart($veid) {
         $this->_isConnected();
         $this->_isVeid($veid);
-        $this->_exists($veid);
-        $timeout = $this->ssh->timeout();
-        $this->ssh->settimeout(120);
+        $this->_veidExists($veid);
+        $timeout = $this->_getTimeout();
+        $this->_setTimeout(120);
         $exe = 'vzctl restart ' . $veid;
         $result = $this->shellExecute($exe);
-        $this->ssh->settimeout($timeout);
+        $this->_setTimeout($timeout);
         if (preg_match('/container start in progress/i', $result)) {
             $response = 'virtual server has been restarted';
             $this->setResponse($response);
@@ -519,109 +529,87 @@ class vz
 
     /**
      * @param $veid
-     * @param $os
      * @param $ip
+     * @param $os
      * @param null $pass
      * @param null $settings
      * @return bool
+     * @throws Exception
      */
-    function create($veid, $os, $ip, $pass = null, $settings = null) {
-        if (!$this->connected) {
-            $response = 'no ssh connection';
+    function create($veid, $ip, $os, $pass = null, $settings = null) {
+        $this->_isConnected();
+        $this->_isVeid($veid);
+        $this->stop($veid);
+        $this->osTemplateCheck($os);
+        if (!$this->_isValidIp($ip)) {
+            $response = 'invalid ip address';
             throw new Exception($response);
         }
-        if (preg_match('/([0-9]+)/', $veid)) {
-            $exists = $this->exists($veid);
-            if (!$exists) {
-                $listos = $this->listos();
-                if (($listos) && in_array($listos, $os)) {
-                    if ($this->_valid_ip($ip)) {
-                        if ((!$pass) || preg_match('/[^a-z0-9]+/i', $pass)) {
-                            $pass = $this->_randompwd();
-                        }
-                        /** Everything provided up to this point has been verified and
-                         * should be valid. We now create the VPS and apply the settings after */
-                        $exe = 'vzctl create ' . $veid . ' --ostemplate ' . $os . '; ';
-                        $exe .= 'vzctl set ' . $veid . ' --ipadd ' . $ip . ' --save; ';
-                        $exe .= 'vzctl set ' . $veid . ' --onboot yes --save; ';
-                        $exe .= 'vzctl exec ' . $veid . ' mount devpts /dev/pts -t devpts; ';
-                        $exe .= 'vzctl exec ' . $veid . ' MAKEDEV tty; ';
-                        $exe .= 'vzctl exec ' . $veid . ' MAKEDEV pty ';
-                        $create_result = $this->shellExecute($exe);
-                        if (preg_match('/container private area was created/i', $create_result)) {
-                            if ($settings) {
-                                $set_result = $this->set($veid, $settings, 1);
-                            } else {
-                                $set_result = 'no settings applied to virtual server';
-                            }
-                            $start = $this->start($veid);
-                            $result = array();
-                            $result['veid'] = $veid;
-                            $result['operating_system'] = $os;
-                            $result['ip_main'] = $ip;
-                            $result['root_passwprd'] = $pass;
-                            $result['settings'] = $set_result;
-                            $result['running'] = $start;
-                            $response = 'virtual server created';
-                            $this->setResponse($response);
-                            return $result;
-                        } else {
-                            $response = 'failed to create virtual server';
-                            throw new Exception($response);
-                        }
-                    } else {
-                        $response = 'invalid ip address';
-                        throw new Exception($response);
-                    }
-                } else {
-                    $response = 'operating system template not found or available';
-                    throw new Exception($response);
-                }
-            } else {
-                return $exists;
-            }
+        if ((!$pass) || preg_match('/[^a-z0-9]+/i', $pass)) {
+            $pass = $this->_getRandomPassword();
+        }
+        /** Everything provided up to this point has been verified and
+         * should be valid. We now create the VPS and apply the settings after */
+        $exe = 'vzctl create ' . $veid . ' --ostemplate ' . $os . '; ';
+        $exe .= 'vzctl set ' . $veid . ' --ipadd ' . $ip . ' --save; ';
+        $exe .= 'vzctl set ' . $veid . ' --onboot yes --save; ';
+        $exe .= 'vzctl exec ' . $veid . ' mount devpts /dev/pts -t devpts; ';
+        $exe .= 'vzctl exec ' . $veid . ' MAKEDEV tty; ';
+        $exe .= 'vzctl exec ' . $veid . ' MAKEDEV pty ';
+        $create_result = $this->shellExecute($exe);
+        if (!preg_match('/container private area was created/i', $create_result)) {
+            $response = 'failed to create virtual server';
+            throw new Exception($response);
+        }
+        if ($settings) {
+            $set_result = $this->set($veid, $settings, 1);
         } else {
-            $response = 'invalid veid';
-            throw new Exception($response);
+            $set_result = 'no settings applied to virtual server';
         }
+        $start = $this->start($veid);
+        $result = array();
+        $result['veid'] = $veid;
+        $result['operating_system'] = $os;
+        $result['ip_main'] = $ip;
+        $result['root_passwprd'] = $pass;
+        $result['settings'] = $set_result;
+        $result['running'] = $start;
+        $response = 'virtual server created';
+        $this->setResponse($response);
+        return $result;
     }
 
     /**
      * @param $veid
+     * @param $confirm
      * @return bool
+     *
+     * @throws Exception if container was not destroyed
      */
-    function destroy($veid) {
-        if (!$this->connected) {
-            $response = 'no ssh connection';
+    function destroy($veid, $confirm = false) {
+        if (!$confirm) {
+            $response = 'unconfirmed destroy';
             throw new Exception($response);
         }
-        if (preg_match('/([0-9]+)/', $veid)) {
-            $exists = $this->exists($veid);
-            if ($exists) {
-                $this->stop($veid);
-                $result = $this->shellExecute('vzctl destroy ' . $veid);
-                if (preg_match('/container private area was destroyed/i', $result)) {
-                    $response = 'virtual server destroyed';
-                    $this->setResponse($response);
-                    return true;
-                } else {
-                    $response = 'failed to destroy virtual server';
-                    throw new Exception($response);
-                }
-            } else {
-                return $exists;
-            }
-        } else {
-            $response = 'invalid veid';
+        $this->_isConnected();
+        $this->_isVeid($veid);
+        $this->_veidExists($veid);
+        $this->stop($veid);
+        $result = $this->shellExecute('vzctl destroy ' . $veid);
+        if (!preg_match('/container private area was destroyed/i', $result)) {
+            $response = 'failed to destroy virtual server';
             throw new Exception($response);
         }
+        $response = 'virtual server destroyed';
+        $this->setResponse($response);
+        return true;
     }
 
     /**
      * @param $ip
      * @return mixed
      */
-    private function _valid_ip($ip) {
+    private function _isValidIp($ip) {
         return filter_var($ip, FILTER_VALIDATE_IP);
     }
 
@@ -629,7 +617,7 @@ class vz
      * @param int $length
      * @return string
      */
-    private function _randompwd($length = 8) {
+    private function _getRandomPassword($length = 8) {
         $salt = 'abchefghjkmnpqrstuvwxyz0123456789';
         srand((double)microtime() * 1000000);
         $i = 0;
@@ -643,6 +631,35 @@ class vz
         return $pass;
     }
 
+    private function _isConnected() {
+        if (!$this->connected) {
+            $response = 'no ssh connection';
+            throw new Exception($response);
+        }
+        return $this->connected;
+    }
+
+    private function _isVeid($veid) {
+        $veid = (int)filter_var($veid, FILTER_VALIDATE_INT);
+        if ($veid > 0) {
+            return $veid;
+        }
+        $response = 'invalid veid';
+        throw new Exception($response);
+    }
+
+    private function _veidExists($veid) {
+        $exists = $this->exists($veid);
+        return $exists;
+    }
+
+    private function _setTimeout($timeout = 60) {
+        $this->ssh->setTimeout($timeout);
+    }
+
+    private function _getTimeout() {
+        return $this->ssh->timeout();
+    }
 }
 
 //EOF
