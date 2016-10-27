@@ -254,10 +254,7 @@ class vz
      * @throws Exception
      */
     function veid2ip($veid) {
-        if (!$this->connected) {
-            $response = 'no ssh connection';
-            throw new Exception($response);
-        }
+        $this->_isConnected();
         $cmd = "vzlist -o ctid,ip | grep $veid";
         $results = $this->shellExecute($cmd);
         if ($results) {
@@ -300,6 +297,7 @@ class vz
     }
 
     function osTemplateCheck($os) {
+        $this->_isConnected();
         $osFilename = $os . '.tar.gz';
         $osPath = '/vz/template/cache';
         $osFile = $osPath . DIRECTORY_SEPARATOR . $osFilename;
@@ -317,15 +315,14 @@ class vz
     }
 
     private function _fileExists($file) {
-        $cmd = "[[ -e $file ]] && echo true";
+        $this->_isConnected();
+        $cmd = "[[ -e $file ]] && echo true || false";
         $result = $this->shellExecute($cmd);
-        if ($result == 'true') {
-            return true;
-        }
-        return false;
+        return preg_match('/true/i', $result);
     }
 
     private function _fileCopy($source, $dest, $timeout = 9000) {
+        $this->_isConnected();
         $_timeout = $this->_getTimeout();
         $this->_setTimeout($timeout);
         $cmd = "wget $source -O $dest -t 5 -T $timeout";
@@ -395,20 +392,23 @@ class vz
 
     /**
      * @param $veid
-     * @param $data
+     * @param $settings
      * @param bool $save
      * @return bool
      * @throws Exception
      */
-    function set($veid, $data, $save = false) {
+    function set($veid, $settings = array(), $save = false) {
         $this->_isConnected();
         $this->_isVeid($veid);
-        if (!is_array($data)) {
+        if (!is_array($settings)) {
+            $settings = unserialize(urldecode($settings));
+        }
+        if (!is_array($settings) || empty($settings)) {
             $response = 'virtual server data not provided or invalid';
             throw new Exception($response);
         }
         $result = array();
-        foreach ($data as $dkey => $dval) {
+        foreach ($settings as $dkey => $dval) {
             if (!is_array($dkey) && !is_array($dval)) {
                 $cmd = "vzctl set $veid --$dkey $dval";
                 if ($save) {
@@ -460,7 +460,13 @@ class vz
             $this->setResponse($response);
             return true;
         }
+        if (preg_match('/config file does not exist/i', $result)) {
+            $response = 'virtual server config file does not exist';
+            $this->setResponse($response);
+            return true;
+        }
         if (!preg_match('/container was stopped/i', $result)) {
+            user_error($result);
             $response = 'unable to stop virtual server';
             throw new Exception($response);
         }
@@ -494,14 +500,14 @@ class vz
         }
         $result = $this->shellExecute($exe);
         $this->_setTimeout($timeout);
-        if (preg_match('/container start in progress/i', $result)) {
-            $response = 'virtual server has been started';
-            $this->setResponse($response);
-            return true;
-        } else {
+        if (!preg_match('/container start in progress/i', $result)) {
+            user_error($result);
             $response = 'unable to start virtual server';
             throw new Exception($response);
         }
+        $response = 'virtual server has been started';
+        $this->setResponse($response);
+        return true;
     }
 
     /**
@@ -532,11 +538,11 @@ class vz
      * @param $ip
      * @param $os
      * @param null $pass
-     * @param null $settings
+     * @param array $settings
      * @return bool
      * @throws Exception
      */
-    function create($veid, $ip, $os, $pass = null, $settings = null) {
+    function create($veid, $ip, $os, $pass = null, $settings = array()) {
         $this->_isConnected();
         $this->_isVeid($veid);
         $this->stop($veid);
@@ -548,31 +554,47 @@ class vz
         if ((!$pass) || preg_match('/[^a-z0-9]+/i', $pass)) {
             $pass = $this->_getRandomPassword();
         }
+        $hostname = sprintf('vps%s.%s', $veid, trim(`hostname`));
+        if (!is_array($settings)) {
+            $settings = unserialize(urldecode($settings));
+        }
         /** Everything provided up to this point has been verified and
          * should be valid. We now create the VPS and apply the settings after */
-        $exe = 'vzctl create ' . $veid . ' --ostemplate ' . $os . '; ';
-        $exe .= 'vzctl set ' . $veid . ' --ipadd ' . $ip . ' --save; ';
-        $exe .= 'vzctl set ' . $veid . ' --onboot yes --save; ';
+        $settings['ostemplate'] = $os;
+        $settings['layout'] = 'simfs';
+        $settings['ipadd'] = $ip;
+        $settings['hostname'] = $hostname;
+        $settings['onboot'] = 'yes';
+        $settings_keys = 'diskspace,diskinodes,ostemplate,layout,ipadd,hostname';
+        $allowed_flags = explode(',', $settings_keys);
+        $flags = array();
+        $sets = array();
+        foreach ($settings as $flag => $setting) {
+            if (in_array($flag, $allowed_flags)) {
+                $flags[] = "--$flag $setting";
+            }
+            $sets[] = "--$flag $setting";
+        }
+        $flags = implode(' ', $flags);
+        $exe = "vzctl create $veid $flags;";
+        foreach ($sets as $set) {
+            $exe .= "vzctl set $veid $set --save;";
+        }
         $exe .= 'vzctl exec ' . $veid . ' mount devpts /dev/pts -t devpts; ';
         $exe .= 'vzctl exec ' . $veid . ' MAKEDEV tty; ';
         $exe .= 'vzctl exec ' . $veid . ' MAKEDEV pty ';
         $create_result = $this->shellExecute($exe);
         if (!preg_match('/container private area was created/i', $create_result)) {
+            error_log($create_result);
             $response = 'failed to create virtual server';
             throw new Exception($response);
-        }
-        if ($settings) {
-            $set_result = $this->set($veid, $settings, 1);
-        } else {
-            $set_result = 'no settings applied to virtual server';
         }
         $start = $this->start($veid);
         $result = array();
         $result['veid'] = $veid;
         $result['operating_system'] = $os;
         $result['ip_main'] = $ip;
-        $result['root_passwprd'] = $pass;
-        $result['settings'] = $set_result;
+        $result['root_password'] = $pass;
         $result['running'] = $start;
         $response = 'virtual server created';
         $this->setResponse($response);
