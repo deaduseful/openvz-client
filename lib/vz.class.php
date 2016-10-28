@@ -18,7 +18,10 @@
  * print_r($vz->restart('123'));
  * print_r($vz->destroy('123'));
  *
- * */
+ */
+
+require_once 'ssh.class.php';
+
 class vz
 {
     /**
@@ -74,7 +77,7 @@ class vz
      * @param $cmd
      * @return mixed
      */
-    function shellExecute($cmd) {
+    private function _shellExecute($cmd) {
         $this->result = $this->ssh->shellExecute($cmd);
         return $this->result;
     }
@@ -88,7 +91,6 @@ class vz
      */
     function connect($server, $user, $pass, $port = 22) {
         if (!$this->ssh) {
-            require_once 'ssh.class.php';
             $this->ssh = new ssh();
         }
         for ($i = 0; $i < $this->retry; $i++) {
@@ -130,12 +132,12 @@ class vz
             return false;
         }
         $this->_setTimeout(1);
-        $this->shellExecute('sudo su ' . $user);
+        $this->_shellExecute('sudo su ' . $user);
         $this->_setTimeout();
-        $whoami = trim($this->shellExecute('whoami'));
+        $whoami = trim($this->_shellExecute('whoami'));
         if ($whoami && $whoami == $user) {
             $cmd = 'export PATH=$PATH:/usr/sbin:/sbin';
-            $this->shellExecute($cmd);
+            $this->_shellExecute($cmd);
             $response = 'logged in as ' . $user;
             $this->setResponse($response);
             return $user;
@@ -155,7 +157,7 @@ class vz
             throw new Exception($response);
         }
         $exec = '/sbin/iptables -Z';
-        $result = $this->shellExecute($exec);
+        $result = $this->_shellExecute($exec);
         if ($result) {
             $response = 'all bandwidth counters reset';
             $this->setResponse($response);
@@ -180,7 +182,7 @@ class vz
             throw new Exception($response);
         }
         $cmd = "/sbin/iptables -L FORWARD -v -x -n | grep $ip";
-        $result = $this->shellExecute($cmd);
+        $result = $this->_shellExecute($cmd);
         if ($result) {
             $response = 'bandwidth stats has been generated';
             $this->setResponse($response);
@@ -208,7 +210,7 @@ class vz
         $cmds[] = "/sbin/iptables -A FORWARD -o eth0 -s $ip";
         $cmds[] = "/sbin/iptables -A FORWARD -i eth0 -d $ip";
         foreach ($cmds as $cmd) {
-            $result[] = $this->shellExecute($cmd);
+            $result[] = $this->_shellExecute($cmd);
         }
         if (!empty($result)) {
             $response = 'bandwidth monitor added';
@@ -237,7 +239,7 @@ class vz
         $cmds[] = "/sbin/iptables -D FORWARD -o eth0 -s $ip";
         $cmds[] = "/sbin/iptables -D FORWARD -i eth0 -d $ip";
         foreach ($cmds as $cmd) {
-            $result[] = $this->shellExecute($cmd);
+            $result[] = $this->_shellExecute($cmd);
         }
         if (!empty($result)) {
             $response = 'bandwidth monitor removed';
@@ -256,7 +258,7 @@ class vz
     function veid2ip($veid) {
         $this->_isConnected();
         $cmd = "vzlist -o ctid,ip | grep $veid";
-        $results = $this->shellExecute($cmd);
+        $results = $this->_shellExecute($cmd);
         if ($results) {
             foreach ($results as $result) {
                 if (preg_match("/^\s+$veid\s+(.+?)$/i", $result, $matches)) {
@@ -279,7 +281,7 @@ class vz
         $this->_isConnected();
         $dir_template_cache = '/vz/template/cache/';
         $exec = "ls -al $dir_template_cache | awk '{print $9}'";
-        $listos = $this->shellExecute($exec);
+        $listos = $this->_shellExecute($exec);
         $match = array();
         if (preg_match_all('/([a-z][\S]+\.gz)\s/i', $listos, $match)) {
             $count = count($match[1]);
@@ -317,7 +319,7 @@ class vz
     private function _fileExists($file) {
         $this->_isConnected();
         $cmd = "[[ -e $file ]] && echo true || false";
-        $result = $this->shellExecute($cmd);
+        $result = $this->_shellExecute($cmd);
         return preg_match('/true/i', $result);
     }
 
@@ -326,7 +328,7 @@ class vz
         $_timeout = $this->_getTimeout();
         $this->_setTimeout($timeout);
         $cmd = "wget $source -O $dest -t 5 -T $timeout";
-        $result = $this->shellExecute($cmd);
+        $result = $this->_shellExecute($cmd);
         $this->_setTimeout($_timeout);
         return $result;
     }
@@ -344,7 +346,7 @@ class vz
      */
     function listvz() {
         $this->_isConnected();
-        $listvz = $this->shellExecute('vzlist -a');
+        $listvz = $this->_shellExecute('vzlist -a');
         $match = array();
         $pattern = '/([0-9]+)\s+([0-9\-]+)\s+([a-z]+)\s+([0-9\.]+)\s+([\S]+)/';
         if (preg_match_all($pattern, $listvz, $match)) {
@@ -414,7 +416,7 @@ class vz
                 if ($save) {
                     $cmd .= ' --save';
                 }
-                $exe = $this->shellExecute($cmd);
+                $exe = $this->_shellExecute($cmd);
                 if (preg_match('/saved parameters/i', $exe)) {
                     $result[$dkey] = 1;
                 } else {
@@ -453,7 +455,7 @@ class vz
         if ($save) {
             $exe .= "; vzctl set $veid --onboot no --save";
         }
-        $result = $this->shellExecute($exe);
+        $result = $this->_shellExecute($exe);
         $this->_setTimeout($timeout);
         if (preg_match('/container is not running/i', $result)) {
             $response = 'virtual server already stopped';
@@ -498,7 +500,7 @@ class vz
         if ($save) {
             $exe .= "; vzctl set $veid --onboot yes --save";
         }
-        $result = $this->shellExecute($exe);
+        $result = $this->_shellExecute($exe);
         $this->_setTimeout($timeout);
         if (!preg_match('/container start in progress/i', $result)) {
             user_error($result);
@@ -522,7 +524,7 @@ class vz
         $timeout = $this->_getTimeout();
         $this->_setTimeout(120);
         $exe = 'vzctl restart ' . $veid;
-        $result = $this->shellExecute($exe);
+        $result = $this->_shellExecute($exe);
         $this->_setTimeout($timeout);
         if (preg_match('/container start in progress/i', $result)) {
             $response = 'virtual server has been restarted';
@@ -583,7 +585,7 @@ class vz
         $exe .= 'vzctl exec ' . $veid . ' mount devpts /dev/pts -t devpts; ';
         $exe .= 'vzctl exec ' . $veid . ' MAKEDEV tty; ';
         $exe .= 'vzctl exec ' . $veid . ' MAKEDEV pty ';
-        $create_result = $this->shellExecute($exe);
+        $create_result = $this->_shellExecute($exe);
         if (!preg_match('/container private area was created/i', $create_result)) {
             error_log($create_result);
             $response = 'failed to create virtual server';
@@ -617,7 +619,7 @@ class vz
         $this->_isVeid($veid);
         $this->_veidExists($veid);
         $this->stop($veid);
-        $result = $this->shellExecute('vzctl destroy ' . $veid);
+        $result = $this->_shellExecute('vzctl destroy ' . $veid);
         if (!preg_match('/container private area was destroyed/i', $result)) {
             $response = 'failed to destroy virtual server';
             throw new Exception($response);
@@ -681,6 +683,19 @@ class vz
 
     private function _getTimeout() {
         return $this->ssh->timeout();
+    }
+
+    /**
+     * @param $veid
+     * @param $cmd
+     * @return mixed
+     */
+    function exec($veid, $cmd) {
+        $this->_isConnected();
+        $this->_isVeid($veid);
+        $this->_veidExists($veid);
+        $this->result = $this->_shellExecute("vzctl exec $veid $cmd");
+        return $this->result;
     }
 }
 
