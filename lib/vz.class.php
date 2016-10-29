@@ -22,6 +22,9 @@
 
 require_once 'ssh.class.php';
 
+/**
+ * Class vz
+ */
 class vz
 {
     /**
@@ -298,6 +301,11 @@ class vz
         throw new Exception($response);
     }
 
+    /**
+     * @param $os
+     * @return bool
+     * @throws Exception
+     */
     function osTemplateCheck($os) {
         $this->_isConnected();
         $osFilename = $os . '.tar.gz';
@@ -316,6 +324,11 @@ class vz
         throw new Exception($response);
     }
 
+    /**
+     * @param $file
+     * @return int
+     * @throws Exception
+     */
     private function _fileExists($file) {
         $this->_isConnected();
         $cmd = "[[ -e $file ]] && echo true || false";
@@ -323,6 +336,13 @@ class vz
         return preg_match('/true/i', $result);
     }
 
+    /**
+     * @param $source
+     * @param $dest
+     * @param int $timeout
+     * @return mixed
+     * @throws Exception
+     */
     private function _fileCopy($source, $dest, $timeout = 9000) {
         $this->_isConnected();
         $_timeout = $this->_getTimeout();
@@ -655,6 +675,10 @@ class vz
         return $pass;
     }
 
+    /**
+     * @return resource
+     * @throws Exception
+     */
     private function _isConnected() {
         if (!$this->connected) {
             $response = 'no ssh connection';
@@ -663,6 +687,11 @@ class vz
         return $this->connected;
     }
 
+    /**
+     * @param $veid
+     * @return int
+     * @throws Exception
+     */
     private function _isVeid($veid) {
         $veid = (int)filter_var($veid, FILTER_VALIDATE_INT);
         if ($veid > 0) {
@@ -672,15 +701,26 @@ class vz
         throw new Exception($response);
     }
 
+    /**
+     * @param $veid
+     * @return bool
+     * @throws Exception
+     */
     private function _veidExists($veid) {
         $exists = $this->exists($veid);
         return $exists;
     }
 
+    /**
+     * @param int $timeout
+     */
     private function _setTimeout($timeout = 60) {
         $this->ssh->setTimeout($timeout);
     }
 
+    /**
+     * @return int
+     */
     private function _getTimeout() {
         return $this->ssh->timeout();
     }
@@ -695,6 +735,25 @@ class vz
         $this->_isVeid($veid);
         $this->_veidExists($veid);
         $this->result = $this->_shellExecute("vzctl exec $veid $cmd");
+        return $this->result;
+    }
+
+    /**
+     * vzmigrate
+     *
+     * @see https://openvz.org/Checkpointing_and_live_migration
+     *
+     * @param $host
+     * @param $veid
+     * @param int $port
+     * @throws Exception
+     */
+    function migrate($host, $veid, $port = 2222) {
+        $this->_isConnected();
+        $this->_isVeid($veid);
+        $this->_veidExists($veid);
+        $cmd = "vzmigrate --live $host $veid --ssh='-p $port' --nodeps=cpu";
+        $this->result = $this->_shellExecute($cmd);
         return $this->result;
     }
 }
