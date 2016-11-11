@@ -123,7 +123,7 @@ class SSH
         if ($this->isConnected()) {
             throw new Exception('there may already be an active connection');
         }
-        $connect = ssh2_connect($host, $port, $this->methods);
+        $connect = @ssh2_connect($host, $port, $this->methods);
         if (!$connect) {
             throw new Exception('unable to establish connection');
         }
