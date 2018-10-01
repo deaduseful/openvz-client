@@ -522,14 +522,20 @@ class vz
         }
         $result = $this->_shellExecute($exe);
         $this->_setTimeout($timeout);
-        if (!preg_match('/container start in progress/i', $result)) {
-            user_error($result);
-            $response = 'unable to start virtual server';
-            throw new Exception($response);
+        $response = null;
+        if (preg_match('/container is already running/i', $result)) {
+            $response = 'virtual server is already running';
         }
-        $response = 'virtual server has been started';
-        $this->setResponse($response);
-        return true;
+        if (preg_match('/container start in progress/i', $result)) {
+            $response = 'virtual server has been started';
+        }
+        if ($response) {
+            $this->setResponse($response);
+            return true;
+        }
+        user_error($result);
+        $response = 'unable to start virtual server';
+        throw new Exception($response);
     }
 
     /**
