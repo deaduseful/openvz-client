@@ -416,7 +416,7 @@ class vz
      * @param $veid
      * @param $settings
      * @param bool $save
-     * @return bool
+     * @return array
      * @throws Exception
      */
     function set($veid, $settings = array(), $save = false) {
