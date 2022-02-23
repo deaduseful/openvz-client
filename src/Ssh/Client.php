@@ -1,10 +1,11 @@
 <?php
 
+namespace Deaduseful\OpenVzClient\Ssh;
+
 /**
- * SSH class.
+ * SSH
  *
- * @copyright Phurix 2009-2016.
- * @note: "PasswordAuthentication yes" must be set in the servers sshd_config
+ * @note "PasswordAuthentication yes" must be set in the servers sshd_config
  *
  * Prerequisites:
  * yum install libssh2-devel
@@ -19,7 +20,7 @@
  * $ssh->shellExecute('ps auxfc; ls');
  * $ssh->disconnect();
  */
-class SSH
+class Client
 {
     /**
      * @var int
@@ -67,20 +68,10 @@ class SSH
     private $result;
 
     /**
-     * @param $response
-     * @return bool
-     */
-    function setResponse($response) {
-        if ($response) {
-            $this->response = $response;
-        }
-        return true;
-    }
-
-    /**
      * @return mixed
      */
-    function getResponse() {
+    function getResponse()
+    {
         if ($this->response) {
             return $this->response;
         }
@@ -88,26 +79,15 @@ class SSH
     }
 
     /**
-     * @param $result
+     * @param $response
      * @return bool
      */
-    function setResult($result) {
-        if ($result) {
-            $this->result = $result;
+    function setResponse($response)
+    {
+        if ($response) {
+            $this->response = $response;
         }
         return true;
-    }
-
-    /**
-     * @return null|resource
-     * @throws Exception
-     */
-    function session() {
-        if (!is_resource($this->session)) {
-            $type = gettype($this->session);
-            throw new Exception(__FUNCTION__ . "() expects parameter 1 to be resource, $type given");
-        }
-        return $this->session;
     }
 
     /**
@@ -116,7 +96,8 @@ class SSH
      * @return bool|resource
      * @throws Exception
      */
-    function connect($host = 'localhost', $port = 22) {
+    function connect($host = 'localhost', $port = 22)
+    {
         if (!extension_loaded('ssh2')) {
             throw new Exception('the ssh2 extension has not been loaded');
         }
@@ -133,10 +114,23 @@ class SSH
     }
 
     /**
+     * @return bool
+     */
+    function isConnected()
+    {
+        if (!$this->connected) {
+            $response = 'no ssh connection';
+            $this->setResponse($response);
+        }
+        return (bool)$this->connected;
+    }
+
+    /**
      * @param bool $connect
      * @return string
      */
-    function finger($connect = false) {
+    function finger($connect = false)
+    {
         if (!$connect) {
             $connect = $this->session();
         }
@@ -146,11 +140,25 @@ class SSH
     }
 
     /**
+     * @return null|resource
+     * @throws Exception
+     */
+    function session()
+    {
+        if (!is_resource($this->session)) {
+            $type = gettype($this->session);
+            throw new Exception(__FUNCTION__ . "() expects parameter 1 to be resource, $type given");
+        }
+        return $this->session;
+    }
+
+    /**
      * @param string $private_key
      * @param bool $pub_key
      * @return bool
      */
-    function setKeyFiles($private_key = 'id_rsa', $pub_key = false) {
+    function setKeyFiles($private_key = 'id_rsa', $pub_key = false)
+    {
         if (!$pub_key) {
             $pub_key = $private_key . '.pub';
         }
@@ -166,7 +174,8 @@ class SSH
      * @return bool
      * @throws Exception
      */
-    function auth($user = 'root', $pass = '', $connect = false) {
+    function auth($user = 'root', $pass = '', $connect = false)
+    {
         if (!$connect) {
             $connect = $this->session();
         }
@@ -190,10 +199,19 @@ class SSH
     }
 
     /**
+     * @param bool $connected
+     */
+    function setConnected($connected = true)
+    {
+        $this->connected = $connected;
+    }
+
+    /**
      * @return bool
      * @throws Exception
      */
-    function disconnect() {
+    function disconnect()
+    {
         if (!$this->isConnected()) {
             throw new Exception('no ssh connection');
         }
@@ -207,86 +225,11 @@ class SSH
     }
 
     /**
-     * @param $file
-     * @param string $remoteDest
-     * @return bool
-     * @throws Exception
+     * @param int $sec
      */
-    function fileSend($file, $remoteDest = './') {
-        if (!$this->isConnected()) {
-            throw new Exception('no ssh connection');
-        }
-        if ((file_exists($file)) && is_readable($file)) {
-            $filename = basename($file);
-            $remoteDest = trim($remoteDest, '/');
-            $remoteFile = $remoteDest . '/' . $filename;
-            $send = ssh2_scp_send($this->session, $file, $remoteFile, 0644);
-            if ($send) {
-                $this->setResponse('file sent to server');
-                return true;
-            }
-            throw new Exception('error sending file to remote host');
-        }
-        throw new Exception('the local file does not exist or is not readable');
-    }
-
-    /**
-     * @param $file
-     * @param bool $localDest
-     * @return bool
-     * @throws Exception
-     */
-    function fileGet($file, $localDest = false) {
-        if (!$this->isConnected()) {
-            throw new Exception('no ssh connection');
-        }
-        $filename = basename($file);
-        if (!$localDest) {
-            $localDest = getcwd();
-        }
-        $path = realpath($localDest);
-        if (@ssh2_scp_recv($this->session, $file, $path . '/' . $filename)) {
-            $this->setResponse('file received from server');
-            return true;
-        }
-        throw new Exception('unable to receive remote file, SCP may be disabled...');
-    }
-
-    /**
-     * @param $cmd
-     * @return bool
-     * @throws Exception
-     */
-    function execute($cmd) {
-        if (!$this->isConnected()) {
-            throw new Exception('no ssh connection');
-        }
-        $end = $this->end;
-        $_cmd = preg_replace('/;+$/', '', $cmd);
-        $exec = $_cmd . '; echo "' . $end . '"';
-        $stream = ssh2_exec($this->session, $exec);
-        if (!$stream) {
-            throw new Exception('unable to execute command');
-        }
-        $time_start = time();
-        $data = '';
-        stream_set_blocking($stream, true);
-        while ($stream) {
-            $data .= fread($stream, 4096);
-            $pattern = "/$end\s/";
-            if (preg_match($pattern, $data)) {
-                fclose($stream);
-                $response = $this->cleanup($data);
-                $this->setResponse($response);
-                return true;
-            }
-            $timeout = $this->timeout();
-            if ((time() - $time_start) > $timeout) {
-                fclose($stream);
-                throw new Exception("the request sent took to long to process or the connection timed out at $timeout seconds");
-            }
-        }
-        throw new Exception('there was an error processing your request');
+    function setTimeout($sec = 30)
+    {
+        $this->timeout = $sec;
     }
 
     /**
@@ -294,7 +237,8 @@ class SSH
      * @return bool|mixed
      * @throws Exception
      */
-    function shellExecute($cmd) {
+    function shellExecute($cmd)
+    {
         if (!$this->isConnected()) {
             throw new Exception('no ssh connection');
         }
@@ -325,24 +269,23 @@ class SSH
     }
 
     /**
-     * @param int $sec
+     * @param $result
+     * @return bool
      */
-    function setTimeout($sec = 30) {
-        $this->timeout = $sec;
-    }
-
-    /**
-     * @return int
-     */
-    function timeout() {
-        return $this->timeout;
+    function setResult($result)
+    {
+        if ($result) {
+            $this->result = $result;
+        }
+        return true;
     }
 
     /**
      * @param $input
      * @return mixed
      */
-    function cleanup($input) {
+    function cleanup($input)
+    {
         $end = $this->end;
         $string = '; echo "' . $end . '"';
         $str_replace = str_replace($string, '', $input);
@@ -350,21 +293,97 @@ class SSH
     }
 
     /**
-     * @return bool
+     * @return int
      */
-    function isConnected() {
-        if (!$this->connected) {
-            $response = 'no ssh connection';
-            $this->setResponse($response);
-        }
-        return (bool)$this->connected;
+    function timeout()
+    {
+        return $this->timeout;
     }
 
     /**
-     * @param bool $connected
+     * @param $file
+     * @param string $remoteDest
+     * @return bool
+     * @throws Exception
      */
-    function setConnected($connected = true) {
-        $this->connected = $connected;
+    function fileSend($file, $remoteDest = './')
+    {
+        if (!$this->isConnected()) {
+            throw new Exception('no ssh connection');
+        }
+        if ((file_exists($file)) && is_readable($file)) {
+            $filename = basename($file);
+            $remoteDest = trim($remoteDest, '/');
+            $remoteFile = $remoteDest . '/' . $filename;
+            $send = ssh2_scp_send($this->session, $file, $remoteFile, 0644);
+            if ($send) {
+                $this->setResponse('file sent to server');
+                return true;
+            }
+            throw new Exception('error sending file to remote host');
+        }
+        throw new Exception('the local file does not exist or is not readable');
+    }
+
+    /**
+     * @param $file
+     * @param bool $localDest
+     * @return bool
+     * @throws Exception
+     */
+    function fileGet($file, $localDest = false)
+    {
+        if (!$this->isConnected()) {
+            throw new Exception('no ssh connection');
+        }
+        $filename = basename($file);
+        if (!$localDest) {
+            $localDest = getcwd();
+        }
+        $path = realpath($localDest);
+        if (@ssh2_scp_recv($this->session, $file, $path . '/' . $filename)) {
+            $this->setResponse('file received from server');
+            return true;
+        }
+        throw new Exception('unable to receive remote file, SCP may be disabled...');
+    }
+
+    /**
+     * @param $cmd
+     * @return bool
+     * @throws Exception
+     */
+    function execute($cmd)
+    {
+        if (!$this->isConnected()) {
+            throw new Exception('no ssh connection');
+        }
+        $end = $this->end;
+        $_cmd = preg_replace('/;+$/', '', $cmd);
+        $exec = $_cmd . '; echo "' . $end . '"';
+        $stream = ssh2_exec($this->session, $exec);
+        if (!$stream) {
+            throw new Exception('unable to execute command');
+        }
+        $time_start = time();
+        $data = '';
+        stream_set_blocking($stream, true);
+        while ($stream) {
+            $data .= fread($stream, 4096);
+            $pattern = "/$end\s/";
+            if (preg_match($pattern, $data)) {
+                fclose($stream);
+                $response = $this->cleanup($data);
+                $this->setResponse($response);
+                return true;
+            }
+            $timeout = $this->timeout();
+            if ((time() - $time_start) > $timeout) {
+                fclose($stream);
+                throw new Exception("the request sent took to long to process or the connection timed out at $timeout seconds");
+            }
+        }
+        throw new Exception('there was an error processing your request');
     }
 
 }

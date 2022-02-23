@@ -1,11 +1,12 @@
 <?php
 
+namespace Deaduseful\OpenVzClient\OpenVz;
+
 /**
- * openVZ class.
- * @copyright Phurix 2009-2016.
+ * OpenVZ Client
  *
  * Example:
- * $vz = new vz();
+ * $vz = new Client();
  * print_r($vz->connect('server.domain.com', 'username', 'p4ssw0rd', 22));
  * print_r($vz->su());
  * print_r($vz->listvz());
@@ -19,13 +20,7 @@
  * print_r($vz->destroy('123'));
  *
  */
-
-require_once 'ssh.class.php';
-
-/**
- * Class vz
- */
-class vz
+class Client
 {
     /**
      * @var int
@@ -49,20 +44,10 @@ class vz
     private $result;
 
     /**
-     * @param $response
-     * @return bool
-     */
-    function setResponse($response) {
-        if ($response) {
-            $this->response = $response;
-        }
-        return true;
-    }
-
-    /**
      * @return string
      */
-    function getResponse() {
+    function getResponse()
+    {
         if ($this->response) {
             return $this->response;
         }
@@ -70,19 +55,23 @@ class vz
     }
 
     /**
-     * @return int
+     * @param $response
+     * @return bool
      */
-    function version() {
-        return 1;
+    function setResponse($response)
+    {
+        if ($response) {
+            $this->response = $response;
+        }
+        return true;
     }
 
     /**
-     * @param $cmd
-     * @return mixed
+     * @return int
      */
-    private function _shellExecute($cmd) {
-        $this->result = $this->ssh->shellExecute($cmd);
-        return $this->result;
+    function version()
+    {
+        return 1;
     }
 
     /**
@@ -92,7 +81,8 @@ class vz
      * @param int $port
      * @return bool
      */
-    function connect($server, $user, $pass, $port = 22) {
+    function connect($server, $user, $pass, $port = 22)
+    {
         if (!$this->ssh) {
             $this->ssh = new ssh();
         }
@@ -116,7 +106,8 @@ class vz
     /**
      * @return mixed
      */
-    function disconnect() {
+    function disconnect()
+    {
         $this->connected = 0;
         $result = $this->ssh->disconnect();
         $this->ssh = null;
@@ -128,7 +119,8 @@ class vz
      * @return bool|string
      * @throws Exception
      */
-    function su($user = 'root') {
+    function su($user = 'root')
+    {
         if (!$this->connected) {
             $response = 'no ssh connection';
             $this->setResponse($response);
@@ -151,10 +143,29 @@ class vz
     }
 
     /**
+     * @param int $timeout
+     */
+    private function _setTimeout($timeout = 60)
+    {
+        $this->ssh->setTimeout($timeout);
+    }
+
+    /**
+     * @param $cmd
+     * @return mixed
+     */
+    private function _shellExecute($cmd)
+    {
+        $this->result = $this->ssh->shellExecute($cmd);
+        return $this->result;
+    }
+
+    /**
      * @return bool|mixed
      * @throws Exception
      */
-    function bwmonreset() {
+    function bwmonreset()
+    {
         if (!$this->connected) {
             $response = 'no ssh connection';
             throw new Exception($response);
@@ -175,7 +186,8 @@ class vz
      * @return bool|mixed
      * @throws Exception
      */
-    function bwmon($ip) {
+    function bwmon($ip)
+    {
         if (!$this->connected) {
             $response = 'no ssh connection';
             throw new Exception($response);
@@ -197,10 +209,20 @@ class vz
 
     /**
      * @param $ip
+     * @return mixed
+     */
+    private function _isValidIp($ip)
+    {
+        return filter_var($ip, FILTER_VALIDATE_IP);
+    }
+
+    /**
+     * @param $ip
      * @return array|bool
      * @throws Exception
      */
-    function bwmonaddip($ip) {
+    function bwmonaddip($ip)
+    {
         if (!$this->connected) {
             $response = 'no ssh connection';
             throw new Exception($response);
@@ -229,7 +251,8 @@ class vz
      * @return array|bool
      * @throws Exception
      */
-    function bwmondelip($ip) {
+    function bwmondelip($ip)
+    {
         if (!$this->connected) {
             $response = 'no ssh connection';
             throw new Exception($response);
@@ -258,7 +281,8 @@ class vz
      * @return bool|string
      * @throws Exception
      */
-    function veid2ip($veid) {
+    function veid2ip($veid)
+    {
         $this->_isConnected();
         $cmd = "vzlist -o ctid,ip | grep $veid";
         $results = $this->_shellExecute($cmd);
@@ -277,10 +301,24 @@ class vz
     }
 
     /**
+     * @return resource
+     * @throws Exception
+     */
+    private function _isConnected()
+    {
+        if (!$this->connected) {
+            $response = 'no ssh connection';
+            throw new Exception($response);
+        }
+        return $this->connected;
+    }
+
+    /**
      * @return bool
      * @throws Exception
      */
-    function listos() {
+    function listos()
+    {
         $this->_isConnected();
         $dir_template_cache = '/vz/template/cache/';
         $exec = "ls -al $dir_template_cache | awk '{print $9}'";
@@ -302,61 +340,10 @@ class vz
     }
 
     /**
-     * @param $os
-     * @return bool
-     * @throws Exception
-     */
-    function osTemplateCheck($os) {
-        $this->_isConnected();
-        $osFilename = $os . '.tar.gz';
-        $osPath = '/vz/template/cache';
-        $osFile = $osPath . DIRECTORY_SEPARATOR . $osFilename;
-        $osUrl = 'http://download.openvz.org/template/precreated';
-        $osUrlFile = "$osUrl/$osFilename";
-        if ($this->_fileExists($osFile)) {
-            return true;
-        }
-        $this->_fileCopy($osUrlFile, $osFile);
-        if ($this->_fileExists($osFile)) {
-            return true;
-        }
-        $response = "unable to find '$os'";
-        throw new Exception($response);
-    }
-
-    /**
-     * @param $file
-     * @return int
-     * @throws Exception
-     */
-    private function _fileExists($file) {
-        $this->_isConnected();
-        $cmd = "[[ -e $file ]] && echo true || false";
-        $result = $this->_shellExecute($cmd);
-        return preg_match('/true/i', $result);
-    }
-
-    /**
-     * @param $source
-     * @param $dest
-     * @param int $timeout
-     * @return mixed
-     * @throws Exception
-     */
-    private function _fileCopy($source, $dest, $timeout = 9000) {
-        $this->_isConnected();
-        $_timeout = $this->_getTimeout();
-        $this->_setTimeout($timeout);
-        $cmd = "wget $source -O $dest -t 5 -T $timeout";
-        $result = $this->_shellExecute($cmd);
-        $this->_setTimeout($_timeout);
-        return $result;
-    }
-
-    /**
      * @return array|bool
      */
-    function listvps() {
+    function listvps()
+    {
         return $this->listvz();
     }
 
@@ -364,7 +351,8 @@ class vz
      * @return array|bool
      * @throws Exception
      */
-    function listvz() {
+    function listvz()
+    {
         $this->_isConnected();
         $listvz = $this->_shellExecute('vzlist -a');
         $match = array();
@@ -395,31 +383,13 @@ class vz
 
     /**
      * @param $veid
-     * @return bool
-     * @throws Exception
-     */
-    function exists($veid) {
-        $this->_isConnected();
-        $this->_isVeid($veid);
-        $listvz = $this->listvz();
-        if (!empty($listvz) && array_key_exists($veid, $listvz)) {
-            $response = 'veid exists';
-            $this->setResponse($response);
-            return true;
-        }
-        $server = $this->_isConnected();
-        $response = "veid '$veid' not found on server '$server'";
-        throw new Exception($response);
-    }
-
-    /**
-     * @param $veid
      * @param $settings
      * @param bool $save
      * @return array
      * @throws Exception
      */
-    function set($veid, $settings = array(), $save = false) {
+    function set($veid, $settings = array(), $save = false)
+    {
         $this->_isConnected();
         $this->_isVeid($veid);
         if (!is_array($settings)) {
@@ -456,7 +426,8 @@ class vz
      * @param $veid
      * @return bool
      */
-    function suspend($veid) {
+    function suspend($veid)
+    {
         return $this->stop($veid);
     }
 
@@ -466,7 +437,8 @@ class vz
      * @return bool
      * @throws Exception
      */
-    function stop($veid, $save = true) {
+    function stop($veid, $save = true)
+    {
         $this->_isConnected();
         $this->_isVeid($veid);
         $timeout = $this->_getTimeout();
@@ -498,10 +470,19 @@ class vz
     }
 
     /**
+     * @return int
+     */
+    private function _getTimeout()
+    {
+        return $this->ssh->timeout();
+    }
+
+    /**
      * @param $veid
      * @return bool
      */
-    function unsuspend($veid) {
+    function unsuspend($veid)
+    {
         return $this->start($veid);
     }
 
@@ -511,7 +492,8 @@ class vz
      * @return bool
      * @throws Exception
      */
-    function start($veid, $save = true) {
+    function start($veid, $save = true)
+    {
         $this->_isConnected();
         $this->_isVeid($veid);
         $timeout = $this->_getTimeout();
@@ -543,7 +525,8 @@ class vz
      * @return bool
      * @throws Exception
      */
-    function restart($veid) {
+    function restart($veid)
+    {
         $this->_isConnected();
         $this->_isVeid($veid);
         $this->_veidExists($veid);
@@ -563,6 +546,52 @@ class vz
 
     /**
      * @param $veid
+     * @return bool
+     * @throws Exception
+     */
+    private function _veidExists($veid)
+    {
+        $exists = $this->exists($veid);
+        return $exists;
+    }
+
+    /**
+     * @param $veid
+     * @return bool
+     * @throws Exception
+     */
+    function exists($veid)
+    {
+        $this->_isConnected();
+        $this->_isVeid($veid);
+        $listvz = $this->listvz();
+        if (!empty($listvz) && array_key_exists($veid, $listvz)) {
+            $response = 'veid exists';
+            $this->setResponse($response);
+            return true;
+        }
+        $server = $this->_isConnected();
+        $response = "veid '$veid' not found on server '$server'";
+        throw new Exception($response);
+    }
+
+    /**
+     * @param $veid
+     * @return int
+     * @throws Exception
+     */
+    private function _isVeid($veid)
+    {
+        $veid = (int)filter_var($veid, FILTER_VALIDATE_INT);
+        if ($veid > 0) {
+            return $veid;
+        }
+        $response = 'invalid veid';
+        throw new Exception($response);
+    }
+
+    /**
+     * @param $veid
      * @param $ip
      * @param $os
      * @param null $pass
@@ -570,7 +599,8 @@ class vz
      * @return bool
      * @throws Exception
      */
-    function create($veid, $ip, $os, $pass = null, $settings = array()) {
+    function create($veid, $ip, $os, $pass = null, $settings = array())
+    {
         $this->_isConnected();
         $this->_isVeid($veid);
         $this->stop($veid);
@@ -630,13 +660,88 @@ class vz
     }
 
     /**
+     * @param $os
+     * @return bool
+     * @throws Exception
+     */
+    function osTemplateCheck($os)
+    {
+        $this->_isConnected();
+        $osFilename = $os . '.tar.gz';
+        $osPath = '/vz/template/cache';
+        $osFile = $osPath . DIRECTORY_SEPARATOR . $osFilename;
+        $osUrl = 'http://download.openvz.org/template/precreated';
+        $osUrlFile = "$osUrl/$osFilename";
+        if ($this->_fileExists($osFile)) {
+            return true;
+        }
+        $this->_fileCopy($osUrlFile, $osFile);
+        if ($this->_fileExists($osFile)) {
+            return true;
+        }
+        $response = "unable to find '$os'";
+        throw new Exception($response);
+    }
+
+    /**
+     * @param $file
+     * @return int
+     * @throws Exception
+     */
+    private function _fileExists($file)
+    {
+        $this->_isConnected();
+        $cmd = "[[ -e $file ]] && echo true || false";
+        $result = $this->_shellExecute($cmd);
+        return preg_match('/true/i', $result);
+    }
+
+    /**
+     * @param $source
+     * @param $dest
+     * @param int $timeout
+     * @return mixed
+     * @throws Exception
+     */
+    private function _fileCopy($source, $dest, $timeout = 9000)
+    {
+        $this->_isConnected();
+        $_timeout = $this->_getTimeout();
+        $this->_setTimeout($timeout);
+        $cmd = "wget $source -O $dest -t 5 -T $timeout";
+        $result = $this->_shellExecute($cmd);
+        $this->_setTimeout($_timeout);
+        return $result;
+    }
+
+    /**
+     * @param int $length
+     * @return string
+     */
+    private function _getRandomPassword($length = 8)
+    {
+        $salt = 'abchefghjkmnpqrstuvwxyz0123456789';
+        srand((double)microtime() * 1000000);
+        $i = 0;
+        $pass = false;
+        while ($i <= $length) {
+            $num = rand() % 33;
+            $tmp = substr($salt, $num, 1);
+            $pass = $pass ? $pass . $tmp : $tmp;
+            $i++;
+        }
+        return $pass;
+    }
+
+    /**
      * @param $veid
      * @param $confirm
      * @return bool
      *
      * @throws Exception if container was not destroyed
      */
-    function destroy($veid, $confirm = false) {
+    function destroy($veid, $confirm = false)
+    {
         if (!$confirm) {
             $response = 'unconfirmed destroy';
             throw new Exception($response);
@@ -656,87 +761,12 @@ class vz
     }
 
     /**
-     * @param $ip
-     * @return mixed
-     */
-    private function _isValidIp($ip) {
-        return filter_var($ip, FILTER_VALIDATE_IP);
-    }
-
-    /**
-     * @param int $length
-     * @return string
-     */
-    private function _getRandomPassword($length = 8) {
-        $salt = 'abchefghjkmnpqrstuvwxyz0123456789';
-        srand((double)microtime() * 1000000);
-        $i = 0;
-        $pass = false;
-        while ($i <= $length) {
-            $num = rand() % 33;
-            $tmp = substr($salt, $num, 1);
-            $pass = $pass ? $pass . $tmp : $tmp;
-            $i++;
-        }
-        return $pass;
-    }
-
-    /**
-     * @return resource
-     * @throws Exception
-     */
-    private function _isConnected() {
-        if (!$this->connected) {
-            $response = 'no ssh connection';
-            throw new Exception($response);
-        }
-        return $this->connected;
-    }
-
-    /**
-     * @param $veid
-     * @return int
-     * @throws Exception
-     */
-    private function _isVeid($veid) {
-        $veid = (int)filter_var($veid, FILTER_VALIDATE_INT);
-        if ($veid > 0) {
-            return $veid;
-        }
-        $response = 'invalid veid';
-        throw new Exception($response);
-    }
-
-    /**
-     * @param $veid
-     * @return bool
-     * @throws Exception
-     */
-    private function _veidExists($veid) {
-        $exists = $this->exists($veid);
-        return $exists;
-    }
-
-    /**
-     * @param int $timeout
-     */
-    private function _setTimeout($timeout = 60) {
-        $this->ssh->setTimeout($timeout);
-    }
-
-    /**
-     * @return int
-     */
-    private function _getTimeout() {
-        return $this->ssh->timeout();
-    }
-
-    /**
      * @param $veid
      * @param $cmd
      * @return mixed
      */
-    function exec($veid, $cmd) {
+    function exec($veid, $cmd)
+    {
         $this->_isConnected();
         $this->_isVeid($veid);
         $this->_veidExists($veid);
@@ -754,7 +784,8 @@ class vz
      * @param int $port
      * @throws Exception
      */
-    function migrate($host, $veid, $port = 2222) {
+    function migrate($host, $veid, $port = 2222)
+    {
         $this->_isConnected();
         $this->_isVeid($veid);
         $this->_veidExists($veid);
