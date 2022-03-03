@@ -2,6 +2,9 @@
 
 namespace Deaduseful\OpenVzClient\OpenVz;
 
+use Deaduseful\OpenVzClient\Ssh\Client as SshClient;
+use RuntimeException;
+
 /**
  * OpenVZ Client
  *
@@ -26,39 +29,36 @@ class Client
      * @var int
      */
     public $retry = 10;   // max amount of times to try connecting
+    
     /**
      * @var resource
      */
     private $connected;
+    
     /**
-     * @var ssh
+     * @var SshClient
      */
     private $ssh;
+    
     /**
      * @var
      */
     private $response;
+    
     /**
      * @var
      */
     private $result;
 
-    /**
-     * @return string
-     */
-    function getResponse()
+    public function getResponse(): ?string
     {
         if ($this->response) {
             return $this->response;
         }
-        return false;
+        return null;
     }
 
-    /**
-     * @param $response
-     * @return bool
-     */
-    function setResponse($response)
+    public function setResponse($response): bool
     {
         if ($response) {
             $this->response = $response;
@@ -66,26 +66,8 @@ class Client
         return true;
     }
 
-    /**
-     * @return int
-     */
-    function version()
+    public function connect(string $server, string $user, string $pass, int $port = 22): bool
     {
-        return 1;
-    }
-
-    /**
-     * @param $server
-     * @param $user
-     * @param $pass
-     * @param int $port
-     * @return bool
-     */
-    function connect($server, $user, $pass, $port = 22)
-    {
-        if (!$this->ssh) {
-            $this->ssh = new ssh();
-        }
         for ($i = 0; $i < $this->retry; $i++) {
             $connect = $this->ssh->connect($server, $port);
             if ($connect) {
@@ -103,10 +85,7 @@ class Client
         return false;
     }
 
-    /**
-     * @return mixed
-     */
-    function disconnect()
+    public function disconnect(): bool
     {
         $this->connected = 0;
         $result = $this->ssh->disconnect();
@@ -115,61 +94,45 @@ class Client
     }
 
     /**
-     * @param string $user
-     * @return bool|string
-     * @throws Exception
+     * @throws RuntimeException
      */
-    function su($user = 'root')
+    public function su(string $user = 'root'): string
     {
-        if (!$this->connected) {
-            $response = 'no ssh connection';
-            $this->setResponse($response);
-            return false;
-        }
+        $this->_isConnected();
         $this->_setTimeout(1);
         $this->_shellExecute('sudo su ' . $user);
         $this->_setTimeout();
         $whoami = trim($this->_shellExecute('whoami'));
         if ($whoami && $whoami == $user) {
-            $cmd = 'export PATH=$PATH:/usr/sbin:/sbin';
-            $this->_shellExecute($cmd);
+            $command = 'export PATH=$PATH:/usr/sbin:/sbin';
+            $this->_shellExecute($command);
             $response = 'logged in as ' . $user;
             $this->setResponse($response);
             return $user;
         } else {
             $response = 'unable to login as ' . $user;
-            throw new Exception($response);
+            throw new RuntimeException($response);
         }
     }
 
-    /**
-     * @param int $timeout
-     */
-    private function _setTimeout($timeout = 60)
+    private function _setTimeout(int $timeout = 60)
     {
         $this->ssh->setTimeout($timeout);
     }
 
-    /**
-     * @param $cmd
-     * @return mixed
-     */
-    private function _shellExecute($cmd)
+    private function _shellExecute(string $command)
     {
-        $this->result = $this->ssh->shellExecute($cmd);
+        $this->result = $this->ssh->shellExecute($command);
         return $this->result;
     }
 
     /**
      * @return bool|mixed
-     * @throws Exception
+     * @throws RuntimeException
      */
     function bwmonreset()
     {
-        if (!$this->connected) {
-            $response = 'no ssh connection';
-            throw new Exception($response);
-        }
+        $this->_isConnected();
         $exec = '/sbin/iptables -Z';
         $result = $this->_shellExecute($exec);
         if ($result) {
@@ -178,64 +141,50 @@ class Client
             return $result;
         }
         $response = 'unable to reset bandwidth counters';
-        throw new Exception($response);
+        throw new RuntimeException($response);
     }
 
     /**
      * @param $ip
      * @return bool|mixed
-     * @throws Exception
+     * @throws RuntimeException
      */
     function bwmon($ip)
     {
-        if (!$this->connected) {
-            $response = 'no ssh connection';
-            throw new Exception($response);
-        }
-        if (!$this->_isValidIp($ip)) {
-            $response = 'invalid ip address';
-            throw new Exception($response);
-        }
-        $cmd = "/sbin/iptables -L FORWARD -v -x -n | grep $ip";
-        $result = $this->_shellExecute($cmd);
+        $this->_isConnected();
+        $this->_isValidIp($ip);
+        $command = "/sbin/iptables -L FORWARD -v -x -n | grep $ip";
+        $result = $this->_shellExecute($command);
         if ($result) {
             $response = 'bandwidth stats has been generated';
             $this->setResponse($response);
             return $result;
         }
         $response = 'unable to generate bandwidth stats';
-        throw new Exception($response);
+        throw new RuntimeException($response);
+    }
+
+    private function _isValidIp(string $ip): bool
+    {
+        if (filter_var($ip, FILTER_VALIDATE_IP)) {
+            return true;
+        }
+        $response = 'invalid ip address';
+        throw new RuntimeException($response);
     }
 
     /**
-     * @param $ip
-     * @return mixed
+     * @throws RuntimeException
      */
-    private function _isValidIp($ip)
+    public function bandwidthMonitorAddIp(string $ip): array
     {
-        return filter_var($ip, FILTER_VALIDATE_IP);
-    }
-
-    /**
-     * @param $ip
-     * @return array|bool
-     * @throws Exception
-     */
-    function bwmonaddip($ip)
-    {
-        if (!$this->connected) {
-            $response = 'no ssh connection';
-            throw new Exception($response);
-        }
-        if (!$this->_isValidIp($ip)) {
-            $response = 'invalid ip address';
-            throw new Exception($response);
-        }
-        $cmds = array();
-        $cmds[] = "/sbin/iptables -A FORWARD -o eth0 -s $ip";
-        $cmds[] = "/sbin/iptables -A FORWARD -i eth0 -d $ip";
-        foreach ($cmds as $cmd) {
-            $result[] = $this->_shellExecute($cmd);
+        $this->_isConnected();
+        $this->_isValidIp($ip);
+        $commands = array();
+        $commands[] = "/sbin/iptables -A FORWARD -o eth0 -s $ip";
+        $commands[] = "/sbin/iptables -A FORWARD -i eth0 -d $ip";
+        foreach ($commands as $command) {
+            $result[] = $this->_shellExecute($command);
         }
         if (!empty($result)) {
             $response = 'bandwidth monitor added';
@@ -243,29 +192,23 @@ class Client
             return $result;
         }
         $response = 'unable to add bandwidth monitor';
-        throw new Exception($response);
+        throw new RuntimeException($response);
     }
 
     /**
      * @param $ip
      * @return array|bool
-     * @throws Exception
+     * @throws RuntimeException
      */
     function bwmondelip($ip)
     {
-        if (!$this->connected) {
-            $response = 'no ssh connection';
-            throw new Exception($response);
-        }
-        if (!$this->_isValidIp($ip)) {
-            $response = 'invalid ip address';
-            throw new Exception($response);
-        }
-        $cmds = array();
-        $cmds[] = "/sbin/iptables -D FORWARD -o eth0 -s $ip";
-        $cmds[] = "/sbin/iptables -D FORWARD -i eth0 -d $ip";
-        foreach ($cmds as $cmd) {
-            $result[] = $this->_shellExecute($cmd);
+        $this->_isConnected();
+        $this->_isValidIp($ip);
+        $commands = array();
+        $commands[] = "/sbin/iptables -D FORWARD -o eth0 -s $ip";
+        $commands[] = "/sbin/iptables -D FORWARD -i eth0 -d $ip";
+        foreach ($commands as $command) {
+            $result[] = $this->_shellExecute($command);
         }
         if (!empty($result)) {
             $response = 'bandwidth monitor removed';
@@ -273,19 +216,19 @@ class Client
             return $result;
         }
         $response = 'unable to remove bandwidth monitor';
-        throw new Exception($response);
+        throw new RuntimeException($response);
     }
 
     /**
      * @param $veid
      * @return bool|string
-     * @throws Exception
+     * @throws RuntimeException
      */
     function veid2ip($veid)
     {
         $this->_isConnected();
-        $cmd = "vzlist -o ctid,ip | grep $veid";
-        $results = $this->_shellExecute($cmd);
+        $command = "vzlist -o ctid,ip | grep $veid";
+        $results = $this->_shellExecute($command);
         if ($results) {
             foreach ($results as $result) {
                 if (preg_match("/^\s+$veid\s+(.+?)$/i", $result, $matches)) {
@@ -297,27 +240,27 @@ class Client
             }
         }
         $response = 'unable to gather ip address data';
-        throw new Exception($response);
+        throw new RuntimeException($response);
     }
 
     /**
      * @return resource
-     * @throws Exception
+     * @throws RuntimeException
      */
     private function _isConnected()
     {
-        if (!$this->connected) {
+        if (empty($this->connected)) {
             $response = 'no ssh connection';
-            throw new Exception($response);
+            throw new RuntimeException($response);
         }
         return $this->connected;
     }
 
     /**
      * @return bool
-     * @throws Exception
+     * @throws RuntimeException
      */
-    function listos()
+    public function listos()
     {
         $this->_isConnected();
         $dir_template_cache = '/vz/template/cache/';
@@ -336,7 +279,7 @@ class Client
             return $result;
         }
         $response = 'no operating systems found on hardware node';
-        throw new Exception($response);
+        throw new RuntimeException($response);
     }
 
     /**
@@ -349,7 +292,7 @@ class Client
 
     /**
      * @return array|bool
-     * @throws Exception
+     * @throws RuntimeException
      */
     function listvz()
     {
@@ -374,11 +317,11 @@ class Client
                 return $result;
             } else {
                 $response = 'unable to determine virtual servers';
-                throw new Exception($response);
+                throw new RuntimeException($response);
             }
         }
         $response = 'unable to list virtual servers';
-        throw new Exception($response);
+        throw new RuntimeException($response);
     }
 
     /**
@@ -386,7 +329,7 @@ class Client
      * @param $settings
      * @param bool $save
      * @return array
-     * @throws Exception
+     * @throws RuntimeException
      */
     function set($veid, $settings = array(), $save = false)
     {
@@ -397,16 +340,16 @@ class Client
         }
         if (!is_array($settings) || empty($settings)) {
             $response = 'virtual server data not provided or invalid';
-            throw new Exception($response);
+            throw new RuntimeException($response);
         }
         $result = array();
         foreach ($settings as $dkey => $dval) {
             if (!is_array($dkey) && !is_array($dval)) {
-                $cmd = "vzctl set $veid --$dkey $dval";
+                $command = "vzctl set $veid --$dkey $dval";
                 if ($save) {
-                    $cmd .= ' --save';
+                    $command .= ' --save';
                 }
-                $exe = $this->_shellExecute($cmd);
+                $exe = $this->_shellExecute($command);
                 if (preg_match('/saved parameters/i', $exe)) {
                     $result[$dkey] = 1;
                 } else {
@@ -424,6 +367,21 @@ class Client
 
     /**
      * @param $veid
+     * @return int
+     * @throws RuntimeException
+     */
+    private function _isVeid($veid)
+    {
+        $veid = (int)filter_var($veid, FILTER_VALIDATE_INT);
+        if ($veid > 0) {
+            return $veid;
+        }
+        $response = 'invalid veid';
+        throw new RuntimeException($response);
+    }
+
+    /**
+     * @param $veid
      * @return bool
      */
     function suspend($veid)
@@ -435,7 +393,7 @@ class Client
      * @param $veid
      * @param bool $save
      * @return bool
-     * @throws Exception
+     * @throws RuntimeException
      */
     function stop($veid, $save = true)
     {
@@ -462,7 +420,7 @@ class Client
         if (!preg_match('/container was stopped/i', $result)) {
             user_error($result);
             $response = 'unable to stop virtual server';
-            throw new Exception($response);
+            throw new RuntimeException($response);
         }
         $response = 'virtual server has been stopped';
         $this->setResponse($response);
@@ -490,7 +448,7 @@ class Client
      * @param $veid
      * @param bool $save
      * @return bool
-     * @throws Exception
+     * @throws RuntimeException
      */
     function start($veid, $save = true)
     {
@@ -517,13 +475,13 @@ class Client
         }
         user_error($result);
         $response = 'unable to start virtual server';
-        throw new Exception($response);
+        throw new RuntimeException($response);
     }
 
     /**
      * @param $veid
      * @return bool
-     * @throws Exception
+     * @throws RuntimeException
      */
     function restart($veid)
     {
@@ -541,13 +499,13 @@ class Client
             return true;
         }
         $response = 'unexpected response: ' . $result;
-        throw new Exception($response);
+        throw new RuntimeException($response);
     }
 
     /**
      * @param $veid
      * @return bool
-     * @throws Exception
+     * @throws RuntimeException
      */
     private function _veidExists($veid)
     {
@@ -558,7 +516,7 @@ class Client
     /**
      * @param $veid
      * @return bool
-     * @throws Exception
+     * @throws RuntimeException
      */
     function exists($veid)
     {
@@ -572,22 +530,7 @@ class Client
         }
         $server = $this->_isConnected();
         $response = "veid '$veid' not found on server '$server'";
-        throw new Exception($response);
-    }
-
-    /**
-     * @param $veid
-     * @return int
-     * @throws Exception
-     */
-    private function _isVeid($veid)
-    {
-        $veid = (int)filter_var($veid, FILTER_VALIDATE_INT);
-        if ($veid > 0) {
-            return $veid;
-        }
-        $response = 'invalid veid';
-        throw new Exception($response);
+        throw new RuntimeException($response);
     }
 
     /**
@@ -596,19 +539,16 @@ class Client
      * @param $os
      * @param null $pass
      * @param array $settings
-     * @return bool
-     * @throws Exception
+     * @return array
+     * @throws RuntimeException
      */
-    function create($veid, $ip, $os, $pass = null, $settings = array())
+    function create($veid, $ip, $os, $pass = null, array $settings = []): array
     {
         $this->_isConnected();
+        $this->_isValidIp($ip);
         $this->_isVeid($veid);
         $this->stop($veid);
         $this->osTemplateCheck($os);
-        if (!$this->_isValidIp($ip)) {
-            $response = 'invalid ip address';
-            throw new Exception($response);
-        }
         if ((!$pass) || preg_match('/[^a-z0-9]+/i', $pass)) {
             $pass = $this->_getRandomPassword();
         }
@@ -625,8 +565,8 @@ class Client
         $settings['onboot'] = 'yes';
         $settings_keys = 'diskspace,diskinodes,ostemplate,layout,ipadd,hostname';
         $allowed_flags = explode(',', $settings_keys);
-        $flags = array();
-        $sets = array();
+        $flags = [];
+        $sets = [];
         foreach ($settings as $flag => $setting) {
             if (in_array($flag, $allowed_flags)) {
                 $flags[] = "--$flag $setting";
@@ -645,7 +585,7 @@ class Client
         if (!preg_match('/container private area was created/i', $create_result)) {
             error_log($create_result);
             $response = 'failed to create virtual server';
-            throw new Exception($response);
+            throw new RuntimeException($response);
         }
         $start = $this->start($veid);
         $result = array();
@@ -662,9 +602,9 @@ class Client
     /**
      * @param $os
      * @return bool
-     * @throws Exception
+     * @throws RuntimeException
      */
-    function osTemplateCheck($os)
+    function osTemplateCheck($os): bool
     {
         $this->_isConnected();
         $osFilename = $os . '.tar.gz';
@@ -680,19 +620,19 @@ class Client
             return true;
         }
         $response = "unable to find '$os'";
-        throw new Exception($response);
+        throw new RuntimeException($response);
     }
 
     /**
      * @param $file
      * @return int
-     * @throws Exception
+     * @throws RuntimeException
      */
     private function _fileExists($file)
     {
         $this->_isConnected();
-        $cmd = "[[ -e $file ]] && echo true || false";
-        $result = $this->_shellExecute($cmd);
+        $command = "[[ -e $file ]] && echo true || false";
+        $result = $this->_shellExecute($command);
         return preg_match('/true/i', $result);
     }
 
@@ -701,15 +641,15 @@ class Client
      * @param $dest
      * @param int $timeout
      * @return mixed
-     * @throws Exception
+     * @throws RuntimeException
      */
     private function _fileCopy($source, $dest, $timeout = 9000)
     {
         $this->_isConnected();
         $_timeout = $this->_getTimeout();
         $this->_setTimeout($timeout);
-        $cmd = "wget $source -O $dest -t 5 -T $timeout";
-        $result = $this->_shellExecute($cmd);
+        $command = "wget $source -O $dest -t 5 -T $timeout";
+        $result = $this->_shellExecute($command);
         $this->_setTimeout($_timeout);
         return $result;
     }
@@ -738,13 +678,13 @@ class Client
      * @param $confirm
      * @return bool
      *
-     * @throws Exception if container was not destroyed
+     * @throws RuntimeException if container was not destroyed
      */
     function destroy($veid, $confirm = false)
     {
         if (!$confirm) {
             $response = 'unconfirmed destroy';
-            throw new Exception($response);
+            throw new RuntimeException($response);
         }
         $this->_isConnected();
         $this->_isVeid($veid);
@@ -753,7 +693,7 @@ class Client
         $result = $this->_shellExecute('vzctl destroy ' . $veid);
         if (!preg_match('/container private area was destroyed/i', $result)) {
             $response = 'failed to destroy virtual server';
-            throw new Exception($response);
+            throw new RuntimeException($response);
         }
         $response = 'virtual server destroyed';
         $this->setResponse($response);
@@ -762,15 +702,15 @@ class Client
 
     /**
      * @param $veid
-     * @param $cmd
+     * @param $command
      * @return mixed
      */
-    function exec($veid, $cmd)
+    function exec($veid, $command)
     {
         $this->_isConnected();
         $this->_isVeid($veid);
         $this->_veidExists($veid);
-        $this->result = $this->_shellExecute("vzctl exec $veid $cmd");
+        $this->result = $this->_shellExecute("vzctl exec $veid $command");
         return $this->result;
     }
 
@@ -782,15 +722,15 @@ class Client
      * @param $host
      * @param $veid
      * @param int $port
-     * @throws Exception
+     * @throws RuntimeException
      */
     function migrate($host, $veid, $port = 2222)
     {
         $this->_isConnected();
         $this->_isVeid($veid);
         $this->_veidExists($veid);
-        $cmd = "vzmigrate --live $host $veid --ssh='-p $port' --nodeps=cpu";
-        $this->result = $this->_shellExecute($cmd);
+        $command = "vzmigrate --live $host $veid --ssh='-p $port' --nodeps=cpu";
+        $this->result = $this->_shellExecute($command);
         return $this->result;
     }
 }

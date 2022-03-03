@@ -2,6 +2,8 @@
 
 namespace Deaduseful\OpenVzClient\Ssh;
 
+use RuntimeException;
+
 /**
  * SSH
  *
@@ -22,114 +24,115 @@ namespace Deaduseful\OpenVzClient\Ssh;
  */
 class Client
 {
+    private const DEFAULT_TIMEOUT = 30;
+
     /**
-     * @var int
+     * @var bool
      */
     private $connected;
+
     /**
      * @var null
      */
     private $session = null;
+
     /**
      * @var null
      */
     private $stream = null;
+
     /**
      * @var string
      */
     private $end = '__COMMAND_ENDED__';
+
     /**
      * @var int
      */
-    private $timeout = 30;
+    private $timeout = self::DEFAULT_TIMEOUT;
+
     /**
      * @var array
      */
-    private $methods = array();
+    private $methods = [];
+
     /**
-     * @var
+     * @var string
      */
     private $fingerprint;
+
     /**
-     * @var
+     * @var string
      */
     private $pub_key_file;
+
     /**
-     * @var
+     * @var string
      */
     private $private_key_file;
+
     /**
-     * @var
+     * @var string
      */
     private $response;
+
     /**
-     * @var
+     * @var string
      */
     private $result;
 
-    /**
-     * @return mixed
-     */
-    function getResponse()
+    function getResponse(): ?string
     {
         if ($this->response) {
             return $this->response;
         }
-        return false;
+        return null;
     }
 
-    /**
-     * @param $response
-     * @return bool
-     */
-    function setResponse($response)
+    function setResponse(string $response)
     {
         if ($response) {
             $this->response = $response;
         }
-        return true;
     }
 
     /**
      * @param string $host
      * @param int $port
      * @return bool|resource
-     * @throws Exception
+     * @throws RuntimeException
      */
-    function connect($host = 'localhost', $port = 22)
+    function connect(string $host = 'localhost', int $port = 22): bool
     {
         if (!extension_loaded('ssh2')) {
-            throw new Exception('the ssh2 extension has not been loaded');
+            throw new RuntimeException('the ssh2 extension has not been loaded');
         }
         if ($this->isConnected()) {
-            throw new Exception('there may already be an active connection');
+            throw new RuntimeException('there may already be an active connection');
         }
         $connect = @ssh2_connect($host, $port, $this->methods);
         if (!$connect) {
-            throw new Exception('unable to establish connection');
+            throw new RuntimeException('unable to establish connection');
         }
         $this->session = $connect;
         $this->finger($connect);
         return $connect;
     }
 
-    /**
-     * @return bool
-     */
-    function isConnected()
+    function isConnected(): bool
     {
-        if (!$this->connected) {
-            $response = 'no ssh connection';
-            $this->setResponse($response);
+        if (empty($this->connected)) {
+            throw new RuntimeException('no ssh connection');
         }
-        return (bool)$this->connected;
+        return true;
     }
 
-    /**
-     * @param bool $connect
-     * @return string
-     */
-    function finger($connect = false)
+    function setConnected(bool $connected = true)
+    {
+        $this->connected = $connected;
+    }
+
+    public function finger($connect = null): string
     {
         if (!$connect) {
             $connect = $this->session();
@@ -140,80 +143,59 @@ class Client
     }
 
     /**
-     * @return null|resource
-     * @throws Exception
+     * @throws RuntimeException
      */
     function session()
     {
         if (!is_resource($this->session)) {
             $type = gettype($this->session);
-            throw new Exception(__FUNCTION__ . "() expects parameter 1 to be resource, $type given");
+            throw new RuntimeException(__FUNCTION__ . "() expects parameter 1 to be resource, $type given");
         }
         return $this->session;
     }
 
-    /**
-     * @param string $private_key
-     * @param bool $pub_key
-     * @return bool
-     */
-    function setKeyFiles($private_key = 'id_rsa', $pub_key = false)
+    function setKeyFiles(string $private_key = 'id_rsa', string $pub_key = null)
     {
         if (!$pub_key) {
             $pub_key = $private_key . '.pub';
         }
         $this->private_key_file = $private_key;
         $this->pub_key_file = $pub_key;
-        return true;
     }
 
     /**
-     * @param string $user
-     * @param string $pass
-     * @param bool $connect
-     * @return bool
-     * @throws Exception
+     * @throws RuntimeException
      */
-    function auth($user = 'root', $pass = '', $connect = false)
+    function auth(string $user = 'root', string $pass = '', $connect = null): bool
     {
         if (!$connect) {
             $connect = $this->session();
         }
-        $auth = false;
         if ($this->pub_key_file && $this->private_key_file) {
             if (!file_exists($this->pub_key_file) || !file_exists($this->private_key_file)) {
-                throw new Exception('unable to find the key files');
+                throw new RuntimeException('unable to find the key files');
             }
             $auth = ssh2_auth_pubkey_file($connect, $user, $this->pub_key_file, $this->private_key_file, $pass);
         } elseif ($pass) {
             $auth = ssh2_auth_password($connect, $user, $pass);
         } else {
-            throw new Exception('invalid credentials');
+            throw new RuntimeException('invalid credentials');
         }
         if (!$auth) {
-            throw new Exception('unable to authenticate');
+            throw new RuntimeException('unable to authenticate');
         }
-        $this->setConnected(true);
+        $this->setConnected();
         $this->setResponse('connected and logged in');
         return $auth;
     }
 
     /**
-     * @param bool $connected
+     * @throws RuntimeException
      */
-    function setConnected($connected = true)
-    {
-        $this->connected = $connected;
-    }
-
-    /**
-     * @return bool
-     * @throws Exception
-     */
-    function disconnect()
+    function disconnect(): bool
     {
         if (!$this->isConnected()) {
-            throw new Exception('no ssh connection');
+            throw new RuntimeException('no ssh connection');
         }
         $this->setTimeout(1);
         $this->shellExecute('exit;');
@@ -224,34 +206,27 @@ class Client
         return true;
     }
 
-    /**
-     * @param int $sec
-     */
-    function setTimeout($sec = 30)
+    function setTimeout(int $seconds = 30)
     {
-        $this->timeout = $sec;
+        $this->timeout = $seconds;
     }
 
     /**
-     * @param $cmd
-     * @return bool|mixed
-     * @throws Exception
+     * @throws RuntimeException
      */
-    function shellExecute($cmd)
+    function shellExecute($command)
     {
-        if (!$this->isConnected()) {
-            throw new Exception('no ssh connection');
-        }
+        $this->isConnected();
         if (!$this->stream) {
             $this->stream = ssh2_shell($this->session, 'vt102', null, 180, 124, SSH2_TERM_UNIT_CHARS);
             if (!$this->stream) {
-                throw new Exception('unable to create a stream to shell');
+                throw new RuntimeException('unable to create a stream to shell');
             }
         }
         $data = '';
         $time_start = time();
         $end = $this->end;
-        $string = $cmd . '; echo "' . $end . '"' . PHP_EOL;
+        $string = $command . '; echo "' . $end . '"' . PHP_EOL;
         fwrite($this->stream, preg_replace('/;+$/', '', $string));
         while ($this->stream) {
             $buf = fread($this->stream, 4096);
@@ -262,29 +237,13 @@ class Client
             }
             $timeout = $this->timeout();
             if ((time() - $time_start) > $timeout) {
-                throw new Exception("the request sent took to long to process or the connection timed out at $timeout seconds");
+                throw new RuntimeException("the request sent took to long to process or the connection timed out at $timeout seconds");
             }
         }
-        throw new Exception('there was an error processing your request');
+        throw new RuntimeException('there was an error processing your request');
     }
 
-    /**
-     * @param $result
-     * @return bool
-     */
-    function setResult($result)
-    {
-        if ($result) {
-            $this->result = $result;
-        }
-        return true;
-    }
-
-    /**
-     * @param $input
-     * @return mixed
-     */
-    function cleanup($input)
+    function cleanup(string $input): string
     {
         $end = $this->end;
         $string = '; echo "' . $end . '"';
@@ -292,25 +251,14 @@ class Client
         return str_replace($end, '', $str_replace);
     }
 
-    /**
-     * @return int
-     */
-    function timeout()
+    function timeout(): int
     {
         return $this->timeout;
     }
 
-    /**
-     * @param $file
-     * @param string $remoteDest
-     * @return bool
-     * @throws Exception
-     */
-    function fileSend($file, $remoteDest = './')
+    function fileSend(string $file, string $remoteDest = './'): bool
     {
-        if (!$this->isConnected()) {
-            throw new Exception('no ssh connection');
-        }
+        $this->isConnected();
         if ((file_exists($file)) && is_readable($file)) {
             $filename = basename($file);
             $remoteDest = trim($remoteDest, '/');
@@ -320,22 +268,14 @@ class Client
                 $this->setResponse('file sent to server');
                 return true;
             }
-            throw new Exception('error sending file to remote host');
+            throw new RuntimeException('error sending file to remote host');
         }
-        throw new Exception('the local file does not exist or is not readable');
+        throw new RuntimeException('the local file does not exist or is not readable');
     }
 
-    /**
-     * @param $file
-     * @param bool $localDest
-     * @return bool
-     * @throws Exception
-     */
-    function fileGet($file, $localDest = false)
+    function fileGet(string $file, string $localDest = null): bool
     {
-        if (!$this->isConnected()) {
-            throw new Exception('no ssh connection');
-        }
+        $this->isConnected();
         $filename = basename($file);
         if (!$localDest) {
             $localDest = getcwd();
@@ -345,25 +285,21 @@ class Client
             $this->setResponse('file received from server');
             return true;
         }
-        throw new Exception('unable to receive remote file, SCP may be disabled...');
+        throw new RuntimeException('unable to receive remote file, SCP may be disabled...');
     }
 
     /**
-     * @param $cmd
-     * @return bool
-     * @throws Exception
+     * @throws RuntimeException
      */
-    function execute($cmd)
+    function execute(string $command): bool
     {
-        if (!$this->isConnected()) {
-            throw new Exception('no ssh connection');
-        }
+        $this->isConnected();
         $end = $this->end;
-        $_cmd = preg_replace('/;+$/', '', $cmd);
+        $_cmd = preg_replace('/;+$/', '', $command);
         $exec = $_cmd . '; echo "' . $end . '"';
         $stream = ssh2_exec($this->session, $exec);
         if (!$stream) {
-            throw new Exception('unable to execute command');
+            throw new RuntimeException('unable to execute command');
         }
         $time_start = time();
         $data = '';
@@ -380,10 +316,28 @@ class Client
             $timeout = $this->timeout();
             if ((time() - $time_start) > $timeout) {
                 fclose($stream);
-                throw new Exception("the request sent took to long to process or the connection timed out at $timeout seconds");
+                throw new RuntimeException("the request sent took to long to process or the connection timed out at $timeout seconds");
             }
         }
-        throw new Exception('there was an error processing your request');
+        throw new RuntimeException('there was an error processing your request');
+    }
+
+    public function getFingerprint(): string
+    {
+        return $this->fingerprint;
+    }
+
+    public function getResult(): string
+    {
+        return $this->result;
+    }
+
+    function setResult(string $result): bool
+    {
+        if ($result) {
+            $this->result = $result;
+        }
+        return true;
     }
 
 }
