@@ -1,6 +1,6 @@
 <?php
 
-namespace Deaduseful\OpenVzClient\Ssh;
+namespace DeadUseful\OpenVzClient\Ssh;
 
 use RuntimeException;
 

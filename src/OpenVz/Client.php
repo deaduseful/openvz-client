@@ -1,8 +1,8 @@
 <?php
 
-namespace Deaduseful\OpenVzClient\OpenVz;
+namespace DeadUseful\OpenVzClient\OpenVz;
 
-use Deaduseful\OpenVzClient\Ssh\Client as SshClient;
+use Deaduseful\OpenvzClient\Ssh\Client as SshClient;
 use RuntimeException;
 
 /**
