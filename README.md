@@ -6,6 +6,15 @@ An OpenVz client using the ssh2 client.
 
 `composer require deaduseful/openvz-client`
 
+### Dependencies
+
+On Mac OS X:
+
+```shell
+    brew install libssh2
+    pecl install ssh2-1.1.2
+```
+
 ## About
 
 > A [dead useful](https://deaduseful.com/) project for [Phurix Web Hosting](https://phurix.co.uk/).
