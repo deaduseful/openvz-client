@@ -325,13 +325,9 @@ class Client
     }
 
     /**
-     * @param $veid
-     * @param $settings
-     * @param bool $save
-     * @return array
      * @throws RuntimeException
      */
-    function set($veid, $settings = array(), $save = false)
+    function set(int $veid, array $settings = [], bool $save = false): array
     {
         $this->_isConnected();
         $this->_isVeid($veid);
