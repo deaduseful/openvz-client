@@ -5,26 +5,10 @@ namespace DeadUseful\OpenVzClient\OpenVz;
 use Deaduseful\OpenvzClient\Ssh\Client as SshClient;
 use RuntimeException;
 
-/**
- * OpenVZ Client
- *
- * Example:
- * $vz = new Client();
- * print_r($vz->connect('server.domain.com', 'username', 'p4ssw0rd', 22));
- * print_r($vz->su());
- * print_r($vz->listvz());
- * print_r($vz->listos());
- * print_r($vz->exists('123'));
- * print_r($vz->create('123', 'centos-4-i386-minimal', '192.168.50.51', 'n3wr00tp4ssw0rd'));
- * print_r($vz->set('123', array('diskspace'=>'430209:433209', 'cpulimit'=>'20%')));
- * print_r($vz->stop('123'));
- * print_r($vz->start('123'));
- * print_r($vz->restart('123'));
- * print_r($vz->destroy('123'));
- *
- */
 class Client
 {
+    const LIST_VZ_PATTERN = '/([0-9]+)\s+([0-9\-]+)\s+([a-z]+)\s+([0-9.]+)\s+([\S]+)/';
+
     /**
      * @var int
      */
@@ -120,17 +104,16 @@ class Client
         $this->ssh->setTimeout($timeout);
     }
 
-    private function _shellExecute(string $command)
+    private function _shellExecute(string $command): string
     {
         $this->result = $this->ssh->shellExecute($command);
         return $this->result;
     }
 
     /**
-     * @return bool|mixed
      * @throws RuntimeException
      */
-    function bwmonreset()
+    function bwmonreset(): string
     {
         $this->_isConnected();
         $exec = '/sbin/iptables -Z';
@@ -145,11 +128,9 @@ class Client
     }
 
     /**
-     * @param $ip
-     * @return bool|mixed
      * @throws RuntimeException
      */
-    function bwmon($ip)
+    function bwmon(string $ip): string
     {
         $this->_isConnected();
         $this->_isValidIp($ip);
@@ -196,11 +177,9 @@ class Client
     }
 
     /**
-     * @param $ip
-     * @return array|bool
      * @throws RuntimeException
      */
-    function bwmondelip($ip)
+    function bwmondelip(string $ip): array
     {
         $this->_isConnected();
         $this->_isValidIp($ip);
@@ -220,23 +199,19 @@ class Client
     }
 
     /**
-     * @param $veid
-     * @return bool|string
      * @throws RuntimeException
      */
-    function veid2ip($veid)
+    function veid2ip(int $veid)
     {
         $this->_isConnected();
         $command = "vzlist -o ctid,ip | grep $veid";
-        $results = $this->_shellExecute($command);
-        if ($results) {
-            foreach ($results as $result) {
-                if (preg_match("/^\s+$veid\s+(.+?)$/i", $result, $matches)) {
-                    $result = "IPs " . $matches[1];
-                    $response = 'found ip address data';
-                    $this->setResponse($response);
-                    return $result;
-                }
+        $result = $this->_shellExecute($command);
+        if ($result) {
+            if (preg_match("/^\s+$veid\s+(.+?)$/i", $result, $matches)) {
+                $result = "IPs " . $matches[1];
+                $response = 'found ip address data';
+                $this->setResponse($response);
+                return $result;
             }
         }
         $response = 'unable to gather ip address data';
@@ -257,10 +232,9 @@ class Client
     }
 
     /**
-     * @return bool
      * @throws RuntimeException
      */
-    public function listos()
+    public function listos(): array
     {
         $this->_isConnected();
         $dir_template_cache = '/vz/template/cache/';
@@ -282,24 +256,20 @@ class Client
         throw new RuntimeException($response);
     }
 
-    /**
-     * @return array|bool
-     */
-    function listvps()
+    function listvps(): array
     {
         return $this->listvz();
     }
 
     /**
-     * @return array|bool
      * @throws RuntimeException
      */
-    function listvz()
+    function listvz(): array
     {
         $this->_isConnected();
         $listvz = $this->_shellExecute('vzlist -a');
         $match = array();
-        $pattern = '/([0-9]+)\s+([0-9\-]+)\s+([a-z]+)\s+([0-9\.]+)\s+([\S]+)/';
+        $pattern = self::LIST_VZ_PATTERN;
         if (preg_match_all($pattern, $listvz, $match)) {
             if (((!empty($match)) && is_array($match)) && count($match) == 6) {
                 $result = array();
@@ -730,5 +700,3 @@ class Client
         return $this->result;
     }
 }
-
-//EOF

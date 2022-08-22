@@ -4,24 +4,6 @@ namespace DeadUseful\OpenVzClient\Ssh;
 
 use RuntimeException;
 
-/**
- * SSH
- *
- * @note "PasswordAuthentication yes" must be set in the servers sshd_config
- *
- * Prerequisites:
- * yum install libssh2-devel
- * pear config-set preferred_state beta
- * pecl install ssh2
- * pear config-set preferred_state stable
- *
- * Example:
- * $ssh = new ssh();
- * $ssh->connect('host');
- * $ssh->auth('user', 'password');
- * $ssh->shellExecute('ps auxfc; ls');
- * $ssh->disconnect();
- */
 class Client
 {
     private const DEFAULT_TIMEOUT = 30;
@@ -214,7 +196,7 @@ class Client
     /**
      * @throws RuntimeException
      */
-    function shellExecute($command)
+    function shellExecute($command): string
     {
         $this->isConnected();
         if (!$this->stream) {
@@ -341,5 +323,3 @@ class Client
     }
 
 }
-
-//EOF
