@@ -14,5 +14,7 @@
             "email": "jpswade@gmail.com"
         }
     ],
-    "require": {}
+    "require": {
+        "ext-ssh2": "*"
+    }
 }

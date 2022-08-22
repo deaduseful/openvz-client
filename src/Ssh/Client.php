@@ -281,7 +281,7 @@ class Client
             $localDest = getcwd();
         }
         $path = realpath($localDest);
-        if (@ssh2_scp_recv($this->session, $file, $path . '/' . $filename)) {
+        if (ssh2_scp_recv($this->session, $file, $path . '/' . $filename)) {
             $this->setResponse('file received from server');
             return true;
         }
