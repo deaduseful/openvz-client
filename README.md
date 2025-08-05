@@ -8,6 +8,9 @@ An OpenVz client using the ssh2 client.
 
 ### Prerequisites
 
+If you wish to use the SSH Client, you will need the `ssh2` extension installed. This is not required for the OpenVz
+Client itself, but is needed if you want to use the SSH functionality.
+
 * On Linux:
 
 ```shell
@@ -58,5 +61,5 @@ The server must have "PasswordAuthentication yes" set in the sshd_config.
 
 > A [dead useful](https://deaduseful.com/) project for [Phurix Web Hosting](https://phurix.co.uk/).
 
-Copyright (c) 2004-2022 [James Wade](https://wade.be/)
+Copyright (c) 2004-2025 [James Wade](https://wade.be/)
 

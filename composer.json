@@ -14,7 +14,7 @@
             "email": "jpswade@gmail.com"
         }
     ],
-    "require": {
-        "ext-ssh2": "*"
+    "suggest": {
+        "ext-ssh2": "Needed by the Ssh Client to connect to the OpenVz server."
     }
 }
